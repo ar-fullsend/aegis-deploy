@@ -136,48 +136,49 @@ bao write auth/approle/role/aegis-platform \
 bao secrets enable -path=secret -version=2 kv 2>/dev/null || true
 
 # --- Configure OIDC Auth Method for human admin access (ADR-041, idempotent) ---
-KEYCLOAK_URL="${KEYCLOAK_URL:-${KEYCLOAK_PUBLIC_URL:-https://auth.aegis.local}}"
-AEGIS_REALM="${AEGIS_REALM:-aegis-system}"
-OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-aegis-openbao}"
-# OIDC_CLIENT_SECRET must be set in the calling environment — no safe default
-if [[ -z "${OIDC_CLIENT_SECRET:-}" ]]; then
-    echo "Error: OIDC_CLIENT_SECRET must be set in the calling environment"
-    echo "  Set it in .env or export it before running make bootstrap-secrets"
-    exit 1
-fi
-
-bao auth enable oidc 2>/dev/null || true
-
-# Wait for Keycloak OIDC discovery endpoint to be reachable
-OIDC_DISCOVERY="${KEYCLOAK_URL}/realms/${AEGIS_REALM}/.well-known/openid-configuration"
-echo -n "Waiting for OIDC discovery endpoint..."
-WAITED=0
-until curl -fsSo /dev/null "$OIDC_DISCOVERY" 2>/dev/null; do
-    if (( WAITED >= 60 )); then
-        echo " FAILED"
-        echo "Error: OIDC discovery endpoint not reachable after 60s: $OIDC_DISCOVERY"
+if [[ "${SKIP_OIDC_BOOTSTRAP:-false}" != "true" ]]; then
+    KEYCLOAK_URL="${KEYCLOAK_URL:-${KEYCLOAK_PUBLIC_URL:-https://auth.aegis.local}}"
+    AEGIS_REALM="${AEGIS_REALM:-aegis-system}"
+    OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-aegis-openbao}"
+    # OIDC_CLIENT_SECRET must be set in the calling environment — no safe default
+    if [[ -z "${OIDC_CLIENT_SECRET:-}" ]]; then
+        echo "Error: OIDC_CLIENT_SECRET must be set in the calling environment"
+        echo "  Set it in .env or export it before running make bootstrap-secrets"
         exit 1
     fi
-    echo -n "."
-    sleep 3
-    WAITED=$((WAITED + 3))
-done
-echo " ready"
 
-bao write auth/oidc/config \
-    oidc_discovery_url="${KEYCLOAK_URL}/realms/${AEGIS_REALM}" \
-    oidc_client_id="${OIDC_CLIENT_ID}" \
-    oidc_client_secret="${OIDC_CLIENT_SECRET}" \
-    default_role="platform-admin"
+    bao auth enable oidc 2>/dev/null || true
 
-bao write auth/oidc/role/platform-admin \
-    role_type="oidc" \
-    bound_audiences="${OIDC_CLIENT_ID}" \
-    user_claim="sub" \
-    policies="aegis-platform-admin" \
-    allowed_redirect_uris="${BAO_ADDR}/ui/vault/auth/oidc/oidc/callback"
+    # Wait for Keycloak OIDC discovery endpoint to be reachable
+    OIDC_DISCOVERY="${KEYCLOAK_URL}/realms/${AEGIS_REALM}/.well-known/openid-configuration"
+    echo -n "Waiting for OIDC discovery endpoint..."
+    WAITED=0
+    until curl -fsSo /dev/null "$OIDC_DISCOVERY" 2>/dev/null; do
+        if (( WAITED >= 60 )); then
+            echo " FAILED"
+            echo "Error: OIDC discovery endpoint not reachable after 60s: $OIDC_DISCOVERY"
+            exit 1
+        fi
+        echo -n "."
+        sleep 3
+        WAITED=$((WAITED + 3))
+    done
+    echo " ready"
 
-bao policy write aegis-platform-admin - <<'POLICY'
+    bao write auth/oidc/config \
+        oidc_discovery_url="${KEYCLOAK_URL}/realms/${AEGIS_REALM}" \
+        oidc_client_id="${OIDC_CLIENT_ID}" \
+        oidc_client_secret="${OIDC_CLIENT_SECRET}" \
+        default_role="platform-admin"
+
+    bao write auth/oidc/role/platform-admin \
+        role_type="oidc" \
+        bound_audiences="${OIDC_CLIENT_ID}" \
+        user_claim="sub" \
+        policies="aegis-platform-admin" \
+        allowed_redirect_uris="${BAO_ADDR}/ui/vault/auth/oidc/oidc/callback"
+
+    bao policy write aegis-platform-admin - <<'POLICY'
 path "secret/data/*" { capabilities = ["create","read","update","delete","list"] }
 path "secret/metadata/*" { capabilities = ["list","read","delete"] }
 path "pki/*" { capabilities = ["create","read","update","delete","list"] }
@@ -185,7 +186,8 @@ path "auth/*" { capabilities = ["read","list"] }
 path "sys/policies/*" { capabilities = ["read","list"] }
 POLICY
 
-echo "OIDC auth configured (realm: ${AEGIS_REALM})"
+    echo "OIDC auth configured (realm: ${AEGIS_REALM})"
+fi  # end SKIP_OIDC_BOOTSTRAP
 
 # Get or generate AppRole credentials (idempotent: validate before generating)
 APPROLE_ENV="${ROOT_DIR}/generated/openbao-approle.env"

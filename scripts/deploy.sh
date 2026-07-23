@@ -41,8 +41,18 @@ echo "  -> FUSE mount prefix directory ready"
 echo "  -> Extracting aegis CLI from image..."
 bash "$SCRIPT_DIR/install-aegis-cli.sh"
 
-# Restart FUSE daemon to pick up new binary
+# Ensure FUSE daemon systemd unit is up to date (in case service file changed)
+# Do this after binary extract so /usr/local/bin/aegis symlink exists
+mkdir -p ~/.config/systemd/user
+if ! cmp -s "$ROOT_DIR/systemd/aegis-fuse-daemon.service" ~/.config/systemd/user/aegis-fuse-daemon.service 2>/dev/null; then
+    cp "$ROOT_DIR/systemd/aegis-fuse-daemon.service" ~/.config/systemd/user/
+    systemctl --user daemon-reload
+    echo "  -> Updated FUSE daemon systemd unit"
+fi
+
+# Restart FUSE daemon to pick up new binary (and ensure enabled/started)
 echo "  -> Restarting FUSE daemon..."
+systemctl --user enable --now aegis-fuse-daemon || true
 systemctl --user restart aegis-fuse-daemon || true
 echo "  -> FUSE daemon started"
 

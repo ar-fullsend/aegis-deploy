@@ -38,7 +38,7 @@ spec:
           mountPath: /etc/temporal/config/dynamicconfig/development-sql.yaml
       readinessProbe:
         exec:
-          command: ["temporal", "operator", "cluster", "health"]
+          command: ["temporal", "operator", "cluster", "health", "--address", "aegis-temporal:7233"]
         initialDelaySeconds: 15
         periodSeconds: 10
 
@@ -76,6 +76,14 @@ spec:
           value: "aegis-core:50051"
         - name: AEGIS_ORCHESTRATOR_URL
           value: "http://aegis-core:8088"
+        - name: KEYCLOAK_HOST
+          value: "http://aegis-iam:8180"
+        - name: KEYCLOAK_SYSTEM_REALM
+          value: "aegis-system"
+        - name: KEYCLOAK_CLIENT_ID
+          value: "aegis-temporal-worker"
+        - name: KEYCLOAK_CLIENT_SECRET
+          value: "${KEYCLOAK_CLIENT_SECRET}"
         - name: NODE_ENV
           value: production
         - name: LOG_LEVEL
@@ -83,11 +91,6 @@ spec:
       volumeMounts:
         - name: temporal-worker-data
           mountPath: /app/data
-      readinessProbe:
-        tcpSocket:
-          port: 7233
-        initialDelaySeconds: 15
-        periodSeconds: 15
 
   volumes:
     - name: temporal-config

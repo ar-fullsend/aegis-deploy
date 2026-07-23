@@ -12,7 +12,7 @@ fi
 
 RUNTIME_URL="http://localhost:8088"
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:8180}"
-LM_STUDIO_URL="${LM_STUDIO_URL:-http://localhost:1234}"
+LM_STUDIO_URL="http://${LM_STUDIO_HOST:-localhost:1234}"
 SLM_MODEL="${LM_STUDIO_MODEL:-phi-3-mini-4k-instruct}"
 
 echo "==> Bootstrapping SLM subworkflow agent (model: $SLM_MODEL via LM Studio)"
@@ -44,29 +44,38 @@ RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$RUNTIME_URL/v1/agents" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d '{
-        "name": "slm-executor",
-        "description": "Executes tasks using the local phi3:mini SLM. Writes, tests, and validates Python code without calling any cloud LLM — runs entirely on-device.",
-        "scope": "global",
-        "labels": {
-            "provider": "ollama",
-            "model": "'"$SLM_MODEL"'",
-            "category": "demo",
-            "role": "worker"
-        },
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "task": {
-                    "type": "string",
-                    "description": "Description of the Python function or program to write"
-                }
-            },
-            "required": ["task"]
+        "apiVersion": "100monkeys.ai/v1",
+        "kind": "Agent",
+        "metadata": {
+            "name": "slm-executor",
+            "version": "1.0.0",
+            "description": "Executes tasks using a local SLM via LM Studio. Writes and tests Python code without any cloud LLM calls.",
+            "scope": "global",
+            "labels": {
+                "provider": "lmstudio",
+                "category": "demo",
+                "role": "worker"
+            }
         },
         "spec": {
+            "input": {
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "task": {
+                            "type": "string",
+                            "description": "Description of the Python function or program to write"
+                        }
+                    },
+                    "required": ["task"]
+                }
+            },
             "runtime": {
                 "language": "python",
                 "version": "3.11"
+            },
+            "task": {
+                "instruction": "Write a Python function that fulfills the user task description. Include a simple self-test at the bottom of the file using assert statements to verify the function works correctly."
             },
             "model_alias": "slm",
             "judge_model_alias": "slm-judge",
@@ -74,10 +83,14 @@ RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$RUNTIME_URL/v1/agents" \
             "execution": {
                 "timeout_seconds": 120,
                 "max_retries": 2,
-                "validation": {
-                    "enabled": true,
-                    "judge_agent": "code-quality-judge"
-                }
+                "validation": [
+                    {
+                        "type": "multi_judge",
+                        "judges": ["code-quality-judge"],
+                        "criteria": "Code is correct, readable, and handles edge cases.",
+                        "threshold": 0.7
+                    }
+                ]
             }
         }
     }')

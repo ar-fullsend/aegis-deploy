@@ -55,8 +55,9 @@ podman rm "${CONTAINER_NAME}" >/dev/null
 mv "${BIN_PATH}.new" "${BIN_PATH}"
 chmod 0755 "${BIN_PATH}"
 
-# Symlink into /usr/local/bin so aegis is available system-wide
-sudo ln -sf "${BIN_PATH}" /usr/local/bin/aegis
+# Symlink into ~/.local/bin so aegis is available without sudo
+mkdir -p "${HOME}/.local/bin"
+ln -sf "${BIN_PATH}" "${HOME}/.local/bin/aegis"
 
 # Ensure XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS are set (required for systemctl --user in non-login shells)
 # shellcheck source=scripts/lib/systemd-user.sh

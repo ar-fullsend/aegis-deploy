@@ -131,6 +131,30 @@ Copy `.env.example` to `.env` and fill in the required values. Key variables:
 
 See `.env.example` for the full list with descriptions.
 
+## Using the CLI with a local deployment
+
+After `make deploy PROFILE=development` (which now includes the `iam` pod) and `make bootstrap-keycloak`:
+
+```bash
+# Authenticate against the *local* Keycloak (not remote dev.100monkeys.ai)
+aegis auth login --env localhost
+
+# You may need to add to /etc/hosts for name resolution (one-time; on WSL also consider /etc/wsl.conf):
+#   sudo sh -c 'echo "127.0.0.1 auth.localhost api.localhost" >> /etc/hosts'
+# Then open the device URL printed by login in your browser (Windows host reaches WSL localhost:8180).
+
+# Run commands against the local stack (AEGIS_KEY also works for non-interactive/CI use with a JWT minted from local Keycloak)
+AEGIS_HOST=127.0.0.1 AEGIS_PORT=8088 \
+  aegis task execute hello-world \
+    --input '{"task": "Write a Python function that returns the Fibonacci sequence up to n."}' \
+    --follow
+
+# Convenience wrapper (recommended; now uses host `aegis` + envs)
+make aegis CMD="task execute hello-world --input '...' --follow"
+```
+
+The `AEGIS_API_TOKEN` in `.env` provides a dev bypass for bearer auth when OIDC is skipped. The local Keycloak enables full OIDC/JWT flows for the CLI and workers.
+
 ## Documentation
 
 Full platform documentation: <https://docs.100monkeys.ai>

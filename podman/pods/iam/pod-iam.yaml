@@ -1,0 +1,43 @@
+# AEGIS IAM Pod — Keycloak
+# Bounded Context: IAM & Identity Federation
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aegis-iam
+  labels:
+    app: aegis
+    context: iam
+spec:
+  containers:
+    - name: keycloak
+      image: quay.io/keycloak/keycloak:24.0
+      args:
+        - start-dev
+        - --http-port=8180
+        - --hostname=auth.localhost
+        - --hostname-strict=false
+        - --hostname-strict-https=false
+        - --proxy=edge
+        - --health-enabled=true
+      env:
+        - name: KEYCLOAK_ADMIN
+          value: "admin"
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          value: "${KEYCLOAK_ADMIN_PASSWORD}"
+        - name: KC_DB
+          value: "postgres"
+        - name: KC_DB_URL
+          value: "jdbc:postgresql://${AEGIS_DB_HOST}:5432/aegis"
+        - name: KC_DB_USERNAME
+          value: "${POSTGRES_USER}"
+        - name: KC_DB_PASSWORD
+          value: "${POSTGRES_PASSWORD}"
+      ports:
+        - containerPort: 8180
+          hostPort: 8180
+      readinessProbe:
+        httpGet:
+          path: /health/ready
+          port: 8180
+        initialDelaySeconds: 30
+        periodSeconds: 10

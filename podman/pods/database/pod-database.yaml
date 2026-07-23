@@ -81,5 +81,5 @@ spec:
         claimName: aegis-postgres-data
     - name: init-scripts
       hostPath:
-        path: ./scripts/init-multiple-dbs.sh
+        path: ${AEGIS_ROOT}/scripts/init-multiple-dbs.sh
         type: File

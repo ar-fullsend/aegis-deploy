@@ -45,6 +45,14 @@ spec:
           value: "${AEGIS_FUSE_DAEMON_ENDPOINT}"
         - name: AEGIS_CLUSTER_PORT
           value: "${AEGIS_CLUSTER_PORT}"
+        - name: AEGIS_API_TOKEN
+          value: "${AEGIS_API_TOKEN}"
+        - name: LM_STUDIO_HOST
+          value: "${LM_STUDIO_HOST}"
+        - name: LM_STUDIO_MODEL
+          value: "${LM_STUDIO_MODEL}"
+        - name: LM_STUDIO_URL
+          value: "${LM_STUDIO_URL}"
         - name: CONTAINER_HOST
           value: "unix:///run/podman/podman.sock"
         - name: DOCKER_HOST
@@ -56,6 +64,8 @@ spec:
           hostPort: 50051
         - containerPort: 9091
           hostPort: 9091
+        - containerPort: 2049
+          hostPort: 2049
       volumeMounts:
         - name: container-sock
           mountPath: /run/podman/podman.sock
@@ -67,6 +77,8 @@ spec:
           mountPath: /app/data
         - name: aegis-home
           mountPath: /root/.aegis
+        - name: aegis-local-volumes
+          mountPath: /var/lib/aegis
       readinessProbe:
         httpGet:
           path: /health
@@ -81,11 +93,11 @@ spec:
         type: Socket
     - name: aegis-config
       hostPath:
-        path: ./podman/pods/core/aegis-config.yaml
+        path: ${AEGIS_ROOT}/podman/pods/core/aegis-config.yaml
         type: File
     - name: runtime-registry
       hostPath:
-        path: ./podman/pods/core/runtime-registry.yaml
+        path: ${AEGIS_ROOT}/podman/pods/core/runtime-registry.yaml
         type: File
     - name: aegis-runtime-data
       persistentVolumeClaim:
@@ -93,3 +105,6 @@ spec:
     - name: aegis-home
       persistentVolumeClaim:
         claimName: aegis-home-data
+    - name: aegis-local-volumes
+      persistentVolumeClaim:
+        claimName: aegis-local-volumes

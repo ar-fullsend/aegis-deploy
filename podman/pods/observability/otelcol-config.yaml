@@ -18,7 +18,7 @@ exporters:
       exporter: false
       job: true
   otlp/jaeger:
-    endpoint: localhost:14250
+    endpoint: localhost:14317
     tls:
       insecure: true
 

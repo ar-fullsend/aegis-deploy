@@ -1,4 +1,4 @@
-.PHONY: setup deploy teardown status networks validate registry-login install-cli aegis shell bootstrap-secrets generate-keys redeploy logs clean
+.PHONY: setup deploy teardown status networks validate registry-login install-cli aegis shell bootstrap-secrets bootstrap-keycloak generate-keys redeploy logs clean
 
 PROFILE ?= development
 SCRIPTS := ./scripts
@@ -42,18 +42,21 @@ teardown:
 
 # ---- Status ----
 status:
-	@podman pod ps --format "table {{.Name}}\t{{.Status}}\t{{.Containers}}"
+	@podman pod ps --format "table {{.Name}}\t{{.Status}}\t{{.NumberOfContainers}} containers"
 	@echo ""
 	@echo "FUSE Daemon:"
 	@bash -c 'source $(SCRIPTS)/lib/systemd-user.sh && systemctl --user is-active aegis-fuse-daemon 2>/dev/null && systemctl --user status aegis-fuse-daemon --no-pager -l 2>/dev/null | head -5 || echo "  inactive"'
 
 # ---- Validate ----
 validate:
-	@bash $(SCRIPTS)/validate-stack.sh
+	@PROFILE=$(PROFILE) bash $(SCRIPTS)/validate-stack.sh
 
 # ---- Bootstrap ----
 bootstrap-secrets:
 	@bash $(SCRIPTS)/bootstrap-openbao.sh
+
+bootstrap-keycloak:
+	@bash $(SCRIPTS)/bootstrap-keycloak.sh
 
 generate-keys:
 	@bash $(SCRIPTS)/generate-seal-keys.sh
@@ -74,7 +77,7 @@ logs:
 
 aegis:
 	@if [ -z "$(CMD)" ]; then echo "Usage: make aegis CMD=\"agent list\""; exit 1; fi
-	@podman exec -it aegis-core-aegis-runtime /usr/local/bin/aegis-runtime $(CMD)
+	@AEGIS_ENV=localhost AEGIS_API_TOKEN=$${AEGIS_API_TOKEN:-local-dev-token} AEGIS_HOST=127.0.0.1 AEGIS_PORT=8088 aegis $(CMD)
 
 shell:
 	@podman exec -it aegis-core-aegis-runtime /bin/bash
