@@ -14,6 +14,10 @@ spec:
       env:
         - name: COLLECTOR_OTLP_ENABLED
           value: "true"
+        - name: COLLECTOR_OTLP_GRPC_HOST_PORT
+          value: "0.0.0.0:14317"
+        - name: COLLECTOR_OTLP_HTTP_HOST_PORT
+          value: "0.0.0.0:14318"
       ports:
         - containerPort: 16686
           hostPort: 16686
@@ -141,11 +145,11 @@ spec:
     # Prometheus
     - name: prometheus-config
       hostPath:
-        path: ./podman/pods/observability/prometheus.yaml
+        path: ${AEGIS_ROOT}/podman/pods/observability/prometheus.yaml
         type: File
     - name: prometheus-alerts
       hostPath:
-        path: ./podman/pods/observability/alerting
+        path: ${AEGIS_ROOT}/podman/pods/observability/alerting
         type: Directory
     - name: prometheus-data
       persistentVolumeClaim:
@@ -153,15 +157,15 @@ spec:
     # Grafana
     - name: grafana-datasources
       hostPath:
-        path: ./podman/pods/observability/grafana/provisioning/datasources
+        path: ${AEGIS_ROOT}/podman/pods/observability/grafana/provisioning/datasources
         type: Directory
     - name: grafana-dashboard-provider
       hostPath:
-        path: ./podman/pods/observability/grafana/provisioning/dashboards
+        path: ${AEGIS_ROOT}/podman/pods/observability/grafana/provisioning/dashboards
         type: Directory
     - name: grafana-dashboards
       hostPath:
-        path: ./podman/pods/observability/grafana/dashboards
+        path: ${AEGIS_ROOT}/podman/pods/observability/grafana/dashboards
         type: Directory
     - name: grafana-data
       persistentVolumeClaim:
@@ -169,7 +173,7 @@ spec:
     # Loki
     - name: loki-config
       hostPath:
-        path: ./podman/pods/observability/loki-config.yaml
+        path: ${AEGIS_ROOT}/podman/pods/observability/loki-config.yaml
         type: File
     - name: loki-data
       persistentVolumeClaim:
@@ -177,7 +181,7 @@ spec:
     # Promtail
     - name: promtail-config
       hostPath:
-        path: ./podman/pods/observability/promtail-config.yaml
+        path: ${AEGIS_ROOT}/podman/pods/observability/promtail-config.yaml
         type: File
     - name: podman-logs
       hostPath:
@@ -190,5 +194,5 @@ spec:
     # otelcol
     - name: otelcol-config
       hostPath:
-        path: ./podman/pods/observability/otelcol-config.yaml
+        path: ${AEGIS_ROOT}/podman/pods/observability/otelcol-config.yaml
         type: File
