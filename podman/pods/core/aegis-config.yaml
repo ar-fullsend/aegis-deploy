@@ -107,7 +107,9 @@ spec:
     max_connection_retries: 30
 
   storage:
-    backend: "local_host"
+    backend: "seaweedfs"
+    seaweedfs:
+      filer_url: "http://aegis-storage:8888"
 
   # Deploy vendored built-in agent and workflow templates on startup.
   # Includes agent-creator-agent, workflow-generator-planner-agent, judge agents,
