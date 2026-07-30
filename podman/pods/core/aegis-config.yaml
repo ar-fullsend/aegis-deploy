@@ -20,30 +20,46 @@ spec:
       api_key: "lmstudio"
       enabled: true
       models:
+        # Built-ins often request alias "default" — must exist on local provider.
+        # Use literal model id (env: expansion is unreliable for model field).
+        - alias: "default"
+          model: "liquid/lfm2.5-1.2b"
+          capabilities: ["code", "reasoning"]
+          context_window: 32000
+          temperature: 0.4
+          cost_per_1k_tokens: 0.0
         - alias: "slm"
-          model: "env:LM_STUDIO_MODEL"
+          model: "liquid/lfm2.5-1.2b"
           capabilities: ["code", "reasoning"]
           context_window: 32000
           temperature: 0.4
           cost_per_1k_tokens: 0.0
         - alias: "smart"
-          model: "env:LM_STUDIO_MODEL"
+          model: "liquid/lfm2.5-1.2b"
           capabilities: ["code", "reasoning"]
           context_window: 32000
           temperature: 0.4
           cost_per_1k_tokens: 0.0
+        - alias: "judge"
+          model: "liquid/lfm2.5-1.2b"
+          capabilities: ["reasoning"]
+          context_window: 32000
+          temperature: 0.2
+          cost_per_1k_tokens: 0.0
         - alias: "slm-judge"
-          model: "env:LM_STUDIO_MODEL"
+          model: "liquid/lfm2.5-1.2b"
           capabilities: ["reasoning"]
           context_window: 32000
           temperature: 0.2
           cost_per_1k_tokens: 0.0
 
+    # Gemini prepaid credits depleted (429). Keep disabled so prefer-local
+    # never falls through to a dead cloud path.
     - name: gemini
       type: gemini
       endpoint: "https://generativelanguage.googleapis.com/v1beta"
       api_key: "env:ZARU_LLM_API_KEY"
-      enabled: true
+      enabled: false
       models:
         - alias: "default"
           model: "gemini-2.0-flash"

@@ -1,34 +1,52 @@
+# Local edge reverse-proxy (no Cloudflare ACME).
+# Production: restore acme_dns cloudflare + real DOMAIN_* in .env.
 {
-	acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	auto_https off
 }
 
-{$DOMAIN_SEAL:seal.localhost} {
-    reverse_proxy aegis-seal-gateway:8089
+http://{$DOMAIN_SEAL:seal.localhost} {
+	reverse_proxy aegis-seal-gateway:8089
 }
 
-{$DOMAIN_TEMPORAL:temporal.localhost} {
-    basic_auth {
-        {$TEMPORAL_UI_USER} {$TEMPORAL_UI_PASSWORD_HASH}
-    }
-    reverse_proxy aegis-temporal:8080
+http://{$DOMAIN_TEMPORAL:temporal.localhost} {
+	reverse_proxy aegis-temporal:8080
 }
 
-{$DOMAIN_JAEGER:jaeger.localhost} {
-    reverse_proxy aegis-observability:16686
+http://{$DOMAIN_JAEGER:jaeger.localhost} {
+	reverse_proxy aegis-observability:16686
 }
 
-{$DOMAIN_SECRETS:secrets.localhost} {
-    reverse_proxy aegis-secrets:8200
+http://{$DOMAIN_SECRETS:secrets.localhost} {
+	reverse_proxy aegis-secrets:8200
 }
 
-{$DOMAIN_API:api.localhost} {
-    reverse_proxy aegis-core:8088
+http://{$DOMAIN_API:api.localhost} {
+	reverse_proxy aegis-core:8088
 }
 
-{$DOMAIN_GRAFANA:grafana.localhost} {
-    reverse_proxy aegis-observability:3300
+http://{$DOMAIN_GRAFANA:grafana.localhost} {
+	# Grafana listens on 3000 inside the pod; hostPort 3300 is host-only mapping
+	reverse_proxy aegis-observability:3000
 }
 
-{$DOMAIN_PROMETHEUS:prometheus.localhost} {
-    reverse_proxy aegis-observability:9090
+http://{$DOMAIN_PROMETHEUS:prometheus.localhost} {
+	reverse_proxy aegis-observability:9090
+}
+
+# Optional hostnames (no dedicated backends in stack yet — point at core/api for now)
+http://{$DOMAIN_APP:app.localhost} {
+	reverse_proxy aegis-core:8088
+}
+
+http://{$DOMAIN_MCP:mcp.localhost} {
+	reverse_proxy aegis-core:8088
+}
+
+http://{$DOMAIN_PORTAINER:portainer.localhost} {
+	respond "portainer not deployed in this stack" 404
+}
+
+# Catch-all health / default on :80
+:80 {
+	respond "aegis-edge ok" 200
 }

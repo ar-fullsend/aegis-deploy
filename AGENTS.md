@@ -22,7 +22,7 @@ aegis-deploy/
 ├── .env.example                 # Environment variable template; copy to .env
 ├── profiles/
 │   ├── minimal.conf             # PODS="secrets core"
-│   ├── development.conf         # PODS="database secrets temporal seal-gateway core observability"
+│   ├── development.conf         # PODS="database secrets temporal seal-gateway iam core storage observability"
 │   └── full.conf                # PODS="database secrets storage temporal seal-gateway core observability"
 ├── podman/
 │   ├── networks/create-networks.sh  # Creates aegis-network bridge
@@ -46,12 +46,14 @@ aegis-deploy/
 │       │   ├── promtail-config.yaml
 │       │   └── alerting/alerts.yaml
 │       ├── storage/pod-storage.yaml
-│       └── edge/                # Optional — production TLS proxy only
+│       └── edge/                # Optional reverse proxy (local HTTP or CF TLS)
 ├── scripts/
 │   ├── deploy.sh                # Deployment orchestrator (reads profile → deploys pods in order)
 │   ├── teardown.sh              # Stops/removes pods for a profile
 │   ├── setup-ubuntu.sh          # Installs Podman + fuse3 on Ubuntu
 │   ├── bootstrap-openbao.sh     # Initializes OpenBao + AppRole; writes ROLE_ID/SECRET_ID to .env
+│   ├── bootstrap-keycloak.sh    # Realm/clients/roles for local OIDC
+│   ├── bootstrap-slm.sh         # Register slm-executor when LM Studio is up
 │   ├── generate-seal-keys.sh    # Generates RSA key pair for SEAL gateway
 │   ├── install-aegis-cli.sh     # Extracts aegis binary from container image → bin/
 │   ├── validate-stack.sh        # curl health checks against all service endpoints
@@ -59,6 +61,8 @@ aegis-deploy/
 │   └── lib/systemd-user.sh      # Sets XDG_RUNTIME_DIR + DBUS_SESSION_BUS_ADDRESS for non-login shells
 ├── systemd/
 │   └── aegis-fuse-daemon.service  # Systemd user service for host-side FUSE daemon (ADR-107)
+├── docs/
+│   └── LOCAL-OPS.md             # WSL2 browser rule, LLM, JWT smoke, workflow YAML
 ├── tests/
 │   └── test-systemd-user-env.sh   # Unit tests for scripts/lib/systemd-user.sh
 ├── .github/
@@ -80,10 +84,19 @@ All pods join `aegis-network` (Podman bridge). Internal DNS resolution uses cont
 | **pod-seal-gateway** | aegis-seal-gateway | 8089 (HTTP), 50055 (gRPC) |
 | **pod-observability** | Jaeger 1.55, Prometheus 2.51, Grafana 10.4, Loki 3.0, Promtail 3.0, otelcol-contrib 0.99 | 16686 (Jaeger), 4317/4318 (OTLP→otelcol), 9090 (Prometheus), 3300 (Grafana), 3100 (Loki) |
 | **pod-storage** | SeaweedFS (master, volume, filer, WebDAV) | 9333, 8080, 8888, 7333 |
-| **pod-edge** | Caddy 2.9 + Cloudflare DNS plugin | 80, 443 (production TLS only) |
+| **pod-edge** | Caddy (local HTTP reverse-proxy; optional CF TLS) | 80, 443 |
 | **host** | FUSE daemon (systemd user service) | 50053 (gRPC, host-only) |
 
 The observability pipeline: services export OTLP traces to **otelcol** (port 4317), which fans out to Jaeger (traces) and Prometheus remote write (metrics).
+
+### Hard rules for agents working this repo
+
+1. **Read `docs/LOCAL-OPS.md` first** — do not re-discover WSL2 / LLM / JWT pitfalls.
+2. **WSL2:** Windows browser must use WSL eth0 IP, never `127.0.0.1`.
+3. **LLM config** in `aegis-config.yaml`: prefer-local; literal model ids; `default` alias on local provider; disable dead Gemini.
+4. **Auth:** Keycloak client credentials (`aegis-runtime` / `aegis-dev-secret`), not `AEGIS_API_TOKEN`.
+5. **Profiles** live in `profiles/*.conf` — docs lag; trust the conf files.
+6. Low padding. Prefer action over re-scanning the whole tree.
 
 ## Deployment Workflows
 

@@ -26,8 +26,10 @@ Select a profile with `PROFILE=<name> make deploy`. Default: `development`.
 | Profile | Pods | Use Case |
 |---|---|---|
 | `minimal` | secrets, core | Local development with external DB |
-| `development` | database, secrets, core, temporal, seal-gateway, iam, observability | Full local dev environment |
-| `full` | database, secrets, core, temporal, seal-gateway, iam, observability, storage | Complete platform with SeaweedFS storage |
+| `development` | database, secrets, temporal, seal-gateway, iam, core, storage, observability | Full local dev (includes IAM + SeaweedFS) |
+| `full` | database, secrets, storage, temporal, seal-gateway, core, observability | Complete platform storage path (**no** iam in profile) |
+
+`edge` is optional and not in any profile: `make redeploy POD=edge`.
 
 ## Pod Architecture
 
@@ -82,20 +84,45 @@ automatically by `make setup`.
 
 ## Edge Proxy (Optional)
 
-The `pod-edge` directory contains a Caddy-based reverse proxy for production deployments with automatic TLS via Cloudflare DNS challenge.
+The `pod-edge` directory contains a Caddy reverse proxy.
 
-| Subdomain Variable | Default | Backend |
+**Local (default in this repo):** HTTP on port 80, `auto_https off`, no Cloudflare token required. Hostnames use `DOMAIN_*` from `.env` (defaults `*.localhost`).
+
+| Subdomain Variable | Default | Backend (in-pod port) |
 |---|---|---|
 | `DOMAIN_API` | `api.localhost` | aegis-core:8088 |
-| `DOMAIN_KEYCLOAK` | `auth.localhost` | aegis-iam:8180 |
 | `DOMAIN_SEAL` | `seal.localhost` | aegis-seal-gateway:8089 |
-| `DOMAIN_TEMPORAL` | `temporal.localhost` | aegis-temporal:8233 |
-| `DOMAIN_GRAFANA` | `grafana.localhost` | aegis-observability:3300 |
+| `DOMAIN_TEMPORAL` | `temporal.localhost` | aegis-temporal:8080 |
+| `DOMAIN_GRAFANA` | `grafana.localhost` | aegis-observability:**3000** (host maps 3300→3000) |
 | `DOMAIN_PROMETHEUS` | `prometheus.localhost` | aegis-observability:9090 |
 | `DOMAIN_JAEGER` | `jaeger.localhost` | aegis-observability:16686 |
 | `DOMAIN_SECRETS` | `secrets.localhost` | aegis-secrets:8200 |
 
-Ports: 80 (HTTP), 443 (HTTPS). Requires `CLOUDFLARE_API_TOKEN` in `.env`.
+**Production TLS:** restore Cloudflare ACME (`acme_dns cloudflare`) and set `CLOUDFLARE_API_TOKEN` + real `DOMAIN_*`.
+
+```bash
+make redeploy POD=edge
+```
+
+## WSL2 / Windows browser access
+
+If the stack runs in **WSL2**, Windows browser `http://127.0.0.1:PORT` hits **Windows**, not WSL → connection refused.
+
+- Inside WSL: `http://127.0.0.1:PORT` is correct.
+- From Windows browser: use the WSL eth0 IP (`hostname -I` inside WSL), e.g. `http://172.27.70.12:3300` for Grafana.
+
+See [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md) for the full UI port list, LLM config, JWT auth, and workflow YAML schema.
+
+## Local LLM (LM Studio)
+
+`podman/pods/core/aegis-config.yaml` is set up for **prefer-local**:
+
+- OpenAI-compatible LM Studio endpoint (edit the host IP/URL for your machine)
+- Literal model id (do **not** rely on `env:LM_STUDIO_MODEL` for the model field — it is not expanded)
+- Aliases `default`, `slm`, `smart`, `judge`, `slm-judge` on the local provider (builtins request `default`)
+- Gemini may be left `enabled: false` when cloud quota is exhausted
+
+After config changes: `podman restart aegis-core-aegis-runtime`.
 
 ## Makefile Targets
 
@@ -139,12 +166,16 @@ After `make deploy PROFILE=development` (which now includes the `iam` pod) and `
 # Authenticate against the *local* Keycloak (not remote dev.100monkeys.ai)
 aegis auth login --env localhost
 
-# You may need to add to /etc/hosts for name resolution (one-time; on WSL also consider /etc/wsl.conf):
-#   sudo sh -c 'echo "127.0.0.1 auth.localhost api.localhost" >> /etc/hosts'
-# Then open the device URL printed by login in your browser (Windows host reaches WSL localhost:8180).
+# Non-interactive JWT (AEGIS_API_TOKEN is not a JWT and will 401):
+TOKEN=$(curl -sS -X POST 'http://localhost:8180/realms/aegis-system/protocol/openid-connect/token' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'client_id=aegis-runtime&client_secret=aegis-dev-secret&grant_type=client_credentials' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 
-# Run commands against the local stack (AEGIS_KEY also works for non-interactive/CI use with a JWT minted from local Keycloak)
-AEGIS_HOST=127.0.0.1 AEGIS_PORT=8088 \
+# Windows browser: use WSL eth0 IP, not 127.0.0.1 (see WSL2 section above).
+
+# Run commands against the local stack
+AEGIS_HOST=127.0.0.1 AEGIS_PORT=8088 AEGIS_KEY="$TOKEN" \
   aegis task execute hello-world \
     --input '{"task": "Write a Python function that returns the Fibonacci sequence up to n."}' \
     --follow
