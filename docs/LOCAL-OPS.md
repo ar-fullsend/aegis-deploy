@@ -196,7 +196,9 @@ systemctl --user restart aegis-fuse-daemon
 
 `Agent execution failed: Execution timed out after 300 seconds` at `WRITE_CODE`.
 
-Patched manifests: `manifests/slow-slm/` (30 min LLM, 30 min resource timeout). Redeploy after every `AEGIS_FORCE_DEPLOY_BUILTINS=true` reset.
+Patched manifests: `manifests/slow-slm/` (30 min LLM, 30 min resource timeout, **1800s output_handler** on `EXECUTE_CODE`). Redeploy after every `AEGIS_FORCE_DEPLOY_BUILTINS=true` reset.
+
+A Temporal `Activity task failed` at `EXECUTE_CODE` with 3 iterations is usually the **formatter activity** (`timeout_seconds: 60` in the stock workflow), not the Python container. WRITE_CODE/VALIDATE succeeding then failing on EXECUTE_CODE matches that.
 
 `aegis-config.yaml` `llm_overall_timeout_secs: 1800`.
 

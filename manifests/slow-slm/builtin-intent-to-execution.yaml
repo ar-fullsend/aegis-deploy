@@ -1,0 +1,202 @@
+
+apiVersion: 100monkeys.ai/v1
+kind: Workflow
+metadata:
+  name: builtin-intent-to-execution
+  version: 1.0.0
+  description: Seamless intent-to-execution pipeline. Accepts a natural-language intent and optional typed inputs, dispatches to a builtin language executor agent to write code to an ephemeral workspace volume, executes it in an isolated container, and returns a formatted result via output_handler. Invoked via the aegis.execute.intent MCP tool from Zaru Execute mode.
+  labels:
+    type: builtin-execute
+    builtin: 'true'
+    category: platform
+    adr: '087'
+  input_schema:
+    properties:
+      container_image:
+        default: python:3.12-slim
+        description: OCI container image used to execute the generated code
+        type: string
+      inputs:
+        additionalProperties: true
+        description: Named input values embedded into the generated code
+        type: object
+      inputs_json:
+        default: '{}'
+        description: JSON-serialized representation of inputs, injected as INTENT_INPUTS env var
+        type: string
+      language:
+        default: python
+        description: Target programming language (python, javascript, bash)
+        type: string
+      language_ext:
+        default: py
+        description: File extension for the generated code file (e.g. py, js, sh)
+        type: string
+      runner:
+        default: python3
+        description: Executable used to run the generated code file (e.g. python3, node, bash)
+        type: string
+      runner_flags:
+        default: -s
+        description: Extra flags injected between the runner and the script path. Set to "-s" for Python to prevent sys.path[0] injection of /workspace, which triggers a FUSE readdir on import and causes an I/O error. Leave empty for JavaScript and Bash.
+        type: string
+    type: object
+  output_schema:
+    properties:
+      exit_code:
+        description: Process exit code (0 = success)
+        type: integer
+      result:
+        description: The formatted execution result
+        type: string
+    required:
+    - result
+    type: object
+  output_template:
+    exit_code: '{{EXECUTE_CODE.exit_code}}'
+    result: '{{EXECUTE_CODE.stdout}}'
+spec:
+  initial_state: WRITE_CODE
+  context: {}
+  states:
+    EXECUTE_CODE:
+      kind: ContainerRun
+      name: execute-user-code
+      image: '{{input.container_image}}'
+      image_pull_policy: null
+      command:
+      - '{{input.runner}}'
+      - '{{input.runner_flags}}'
+      - /workspace/solution.{{input.language_ext}}
+      env:
+        INTENT_INPUTS: '{{{input.inputs_json}}}'
+      workdir: /workspace
+      volumes:
+      - name: workspace
+        mount_path: /workspace
+        read_only: true
+      resources:
+        cpu: 500
+        memory: 256Mi
+        timeout: 10m
+      registry_credentials: null
+      retry: null
+      shell: false
+      read_only_root_filesystem: true
+      run_as_user: 65534:65534
+      network_mode: none
+      output_handler:
+        type: agent
+        agent_id: aegis-output-formatter-agent
+        input_template: |
+          The user's original request: {{intent}}
+
+          The code produced this output:
+          {{output}}
+
+          Preserve all data from the output. If the output is structured
+          (JSON, table, list), keep it intact. Clean up formatting artifacts
+          but do not summarize or condense.
+        timeout_seconds: 1800
+        required: true
+      transitions:
+      - condition: exit_code_non_zero
+        target: EXECUTION_FAILED
+        feedback: null
+      timeout: null
+      max_state_visits: 3
+    VALIDATE_CODE:
+      kind: Agent
+      agent: aegis-code-validator-agent
+      input: |
+        File: /workspace/solution.{{input.language_ext}}
+        Read /workspace/solution.{{input.language_ext}} using fs.read and validate it.
+        Language: {{input.language}}
+        INTENT_INPUTS: {{{input.inputs_json}}}
+      intent: Validate /workspace/solution.{{input.language_ext}}
+      isolation: null
+      judges: []
+      max_iterations: null
+      pre_execution_validator: null
+      output_handler: null
+      transitions:
+      - condition: custom
+        expression: state_output.output.valid
+        target: EXECUTE_CODE
+        feedback: null
+      - condition: on_success
+        target: WRITE_CODE
+        feedback: null
+      - condition: on_failure
+        target: WRITE_FAILED
+        feedback: null
+      timeout: null
+      max_state_visits: 3
+    WRITE_CODE:
+      kind: Agent
+      agent: aegis-{{input.language}}-executor-agent
+      input: |
+        INTENT_INPUTS keys: {{{keys input.inputs}}}
+        INTENT_INPUTS JSON: {{{input.inputs_json}}}
+
+        {{#if blackboard.EXECUTE_CODE}}
+        PREVIOUS RUNTIME ERROR (exit_code={{blackboard.EXECUTE_CODE.output.exit_code}}):
+        {{{blackboard.EXECUTE_CODE.output.stderr}}}
+        Fix the bug and rewrite the solution.
+        {{/if}}
+
+        {{#if blackboard.VALIDATE_CODE}}
+        PREVIOUS VALIDATION FAILURE:
+        {{{blackboard.VALIDATE_CODE.output.summary}}}
+        Fix the issues and rewrite the solution.
+        {{#if blackboard.VALIDATE_CODE.output.criteria.correct_key_usage}}
+        {{#unless blackboard.VALIDATE_CODE.output.criteria.correct_key_usage.pass}}
+        KEY MISMATCH — Your code uses input keys that do not exist:
+        {{{blackboard.VALIDATE_CODE.output.criteria.correct_key_usage.reason}}}
+
+        The ONLY valid input keys are: {{{keys input.inputs}}}
+        Use these EXACT key names. Do not add suffixes or modify them.
+        {{/unless}}
+        {{/if}}
+        {{/if}}
+      intent: '{{intent}}'
+      isolation: null
+      judges: []
+      max_iterations: null
+      pre_execution_validator: null
+      output_handler: null
+      transitions:
+      - condition: on_success
+        target: VALIDATE_CODE
+        feedback: null
+      - condition: on_failure
+        target: WRITE_FAILED
+        feedback: null
+      timeout: null
+      max_state_visits: 3
+    WRITE_FAILED:
+      kind: System
+      command: echo 'Pipeline failed at WRITE_CODE'
+      env: {}
+      workdir: null
+      transitions: []
+      timeout: null
+      max_state_visits: null
+    EXECUTION_FAILED:
+      kind: System
+      command: echo 'Pipeline failed at EXECUTE_CODE, exit_code={{blackboard.EXECUTE_CODE.output.exit_code}}'
+      env: {}
+      workdir: null
+      transitions:
+      - condition: on_success
+        target: WRITE_CODE
+        feedback: null
+      timeout: null
+      max_state_visits: 2
+  storage:
+    workspace:
+      storage_class: ephemeral
+      ttl_hours: 1
+      size_limit_mb: 256
+      blackboard_key: workspace_volume_id
+  max_total_transitions: 20

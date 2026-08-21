@@ -20,6 +20,13 @@ for f in manifests/slow-slm/aegis-*-agent.yaml; do
 done
 ```
 
-Do **not** set `AEGIS_FORCE_DEPLOY_BUILTINS=true` afterward — that restores the 300s builtins.
+The pipeline’s `EXECUTE_CODE` **output_handler** still had `timeout_seconds: 60` (Temporal activity). Bonsai times out there even after the formatter agent itself is patched. `builtin-intent-to-execution.yaml` sets that to **1800**.
+
+```bash
+aegis --host 127.0.0.1 --port 8088 workflow deploy --force --scope global \
+  manifests/slow-slm/builtin-intent-to-execution.yaml
+```
+
+Do **not** set `AEGIS_FORCE_DEPLOY_BUILTINS=true` afterward — that restores stock 60s/300s builtins.
 
 Faster option: in LM Studio turn **Enable Thinking** off for Bonsai so the model emits `content` instead of a long `reasoning_content` preamble.

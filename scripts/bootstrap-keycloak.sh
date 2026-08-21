@@ -125,7 +125,7 @@ echo "Client aegis-runtime created or exists"
 API_SCOPES=(
   "agent:list" "agent:read" "agent:execute" "agent:deploy" "agent:update"
   "execution:read" "execution:stream"
-  "workflow:read" "workflow:list" "workflow:run" "workflow:execute"
+  "workflow:read" "workflow:list" "workflow:run" "workflow:execute" "workflow:deploy"
   "volume:read" "volume:write"
 )
 for SCOPE in "${API_SCOPES[@]}"; do
