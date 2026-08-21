@@ -4,20 +4,25 @@ Podman-based deployment for the [AEGIS](https://docs.100monkeys.ai) platform.
 
 ## Prerequisites
 
-- **Ubuntu 22.04 or 24.04** (other Linux distros may work but are untested)
-- **Podman 4.0+** (rootless) -- `make setup` installs this automatically
-- **GitHub PAT** with `read:packages` scope for pulling images from `ghcr.io/100monkeys-ai`
+- **Ubuntu 22.04/24.04 or Kali** (Kali uses native Podman packages; `make setup` detects it)
+- **Podman 4.0+** (rootless) -- `make setup` installs this on supported distros
+- **GitHub PAT** with `read:packages` (or `gh auth`) for pulling images from `ghcr.io/100monkeys-ai`
+- Optional local LLM: [LM Studio](https://lmstudio.ai) on `0.0.0.0:1234` (infra comes up without a model)
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/100monkeys-ai/aegis-deploy.git
+git clone https://github.com/ar-fullsend/aegis-deploy.git
 cd aegis-deploy
-cp .env.example .env        # fill in required values
-make setup                   # install Podman + dependencies (Ubuntu)
-make deploy                  # deploy with the default "development" profile
-make status                  # verify pods are running
+cp .env.example .env        # set AEGIS_ROOT, GHCR_*, POSTGRES_PASSWORD
+make setup                   # install Podman + dependencies
+make deploy                  # development profile (includes IAM)
+make bootstrap-keycloak      # realm + clients (idempotent)
+make generate-keys           # SEAL RSA keys
+make status && make validate
 ```
+
+OpenBao bootstrap runs automatically after the secrets pod. See [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md) for JWT, LM Studio, Grafana scrapes, and agent vs Temporal.
 
 ## Deployment Profiles
 
@@ -35,7 +40,7 @@ Select a profile with `PROFILE=<name> make deploy`. Default: `development`.
 
 | Pod | Services | Ports |
 |---|---|---|
-| **pod-core** | aegis-runtime | 8088 (HTTP), 50051 (gRPC), 2049 (NFS) |
+| **pod-core** | aegis-runtime + metrics-proxy | 8088 (HTTP), 50051 (gRPC), 2049 (NFS), 9091 (loopback metrics), 9092 (Prometheus scrape) |
 | **pod-database** | PostgreSQL 15, postgres-exporter | 5432, 9187 |
 | **pod-secrets** | OpenBao | 8200 |
 | **pod-temporal** | Temporal 1.23 (auto-setup), Temporal UI 2.21, aegis-temporal-worker | 7233 (gRPC), 8233 (UI) |
@@ -79,8 +84,9 @@ journalctl --user -u aegis-fuse-daemon -f   # tail logs
 
 ### Prerequisites
 
-Requires the `fuse3` package and `fuse` kernel module -- both are installed
-automatically by `make setup`.
+Requires the `fuse3` package and `fuse` kernel module. The unit runs
+`%h/.local/bin/aegis` (extracted from the runtime image into `$REPO/bin/aegis`).
+It retries until orchestrator `:50051` is up.
 
 ## Edge Proxy (Optional)
 
@@ -115,12 +121,13 @@ See [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md) for the full UI port list, LLM config
 
 ## Local LLM (LM Studio)
 
-`podman/pods/core/aegis-config.yaml` is set up for **prefer-local**:
+`podman/pods/core/aegis-config.yaml` is **prefer-local**:
 
-- OpenAI-compatible LM Studio endpoint (edit the host IP/URL for your machine)
-- Literal model id (do **not** rely on `env:LM_STUDIO_MODEL` for the model field — it is not expanded)
-- Aliases `default`, `slm`, `smart`, `judge`, `slm-judge` on the local provider (builtins request `default`)
-- Gemini may be left `enabled: false` when cloud quota is exhausted
+- Host server: `http://127.0.0.1:1234` — bind **`0.0.0.0`** (`lms server start --bind 0.0.0.0`). `127.0.0.1` is unreachable from pods.
+- From pods: `http://host.containers.internal:1234/v1`
+- Model: `prism-ml/bonsai-27b` (confirm with `curl -s http://127.0.0.1:1234/v1/models`)
+- Aliases `default`, `slm`, `smart`, `judge`, `slm-judge` all point at Bonsai (`max_output_tokens` 8192; thinking models spend tokens on `reasoning_content` first)
+- Gemini stays `enabled: false` unless `ZARU_LLM_API_KEY` is set
 
 After config changes: `podman restart aegis-core-aegis-runtime`.
 
@@ -128,7 +135,7 @@ After config changes: `podman restart aegis-core-aegis-runtime`.
 
 | Target | Description |
 |---|---|
-| `make setup` | Install Podman and dependencies on Ubuntu |
+| `make setup` | Install Podman and dependencies (Ubuntu or Kali) |
 | `make deploy` | Deploy all pods for the active profile |
 | `make teardown` | Stop and remove all pods for the active profile |
 | `make status` | Show running pod status |
@@ -151,7 +158,7 @@ Copy `.env.example` to `.env` and fill in the required values. Key variables:
 | `GHCR_USERNAME` | Yes | GitHub username for container registry |
 | `GHCR_TOKEN` | Yes | GitHub PAT with `read:packages` scope |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
-| `LLM_API_KEY` | Yes | API key for your LLM provider |
+| `ZARU_LLM_API_KEY` | No | Gemini key; unused while Gemini is disabled |
 | `KEYCLOAK_ADMIN_PASSWORD` | Recommended | Keycloak admin password (default: `changeme`) |
 | `GRAFANA_ADMIN_PASSWORD` | Recommended | Grafana admin password (default: `changeme`) |
 | `CLOUDFLARE_API_TOKEN` | Edge only | Required for Caddy TLS via DNS challenge |
@@ -163,28 +170,26 @@ See `.env.example` for the full list with descriptions.
 After `make deploy PROFILE=development` (which now includes the `iam` pod) and `make bootstrap-keycloak`:
 
 ```bash
-# Authenticate against the *local* Keycloak (not remote dev.100monkeys.ai)
-aegis auth login --env localhost
-
-# Non-interactive JWT (AEGIS_API_TOKEN is not a JWT and will 401):
-TOKEN=$(curl -sS -X POST 'http://localhost:8180/realms/aegis-system/protocol/openid-connect/token' \
+# Non-interactive JWT (AEGIS_API_TOKEN is not a JWT and will 401).
+# Client secret from bootstrap-keycloak.sh is "placeholder".
+TOKEN=$(curl -sS -X POST 'http://127.0.0.1:8180/realms/aegis-system/protocol/openid-connect/token' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d 'client_id=aegis-runtime&client_secret=aegis-dev-secret&grant_type=client_credentials' \
+  -d 'client_id=aegis-runtime&client_secret=placeholder&grant_type=client_credentials' \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 
-# Windows browser: use WSL eth0 IP, not 127.0.0.1 (see WSL2 section above).
+# Direct agent execute (in-process — does NOT appear in Temporal UI)
+AEGIS_KEY="$TOKEN" aegis --host 127.0.0.1 --port 8088 --output json \
+  agent run aegis-python-executor-agent \
+  --intent 'Write a Python function fib(n) that returns the first n Fibonacci numbers.'
 
-# Run commands against the local stack
-AEGIS_HOST=127.0.0.1 AEGIS_PORT=8088 AEGIS_KEY="$TOKEN" \
-  aegis task execute hello-world \
-    --input '{"task": "Write a Python function that returns the Fibonacci sequence up to n."}' \
-    --follow
-
-# Convenience wrapper (recommended; now uses host `aegis` + envs)
-make aegis CMD="task execute hello-world --input '...' --follow"
+# Durable workflow (DOES appear at http://127.0.0.1:8233/namespaces/default/workflows)
+AEGIS_KEY="$TOKEN" aegis --host 127.0.0.1 --port 8088 --output json \
+  workflow run builtin-intent-to-execution \
+  --intent 'Write a Python function fib(n).' \
+  --input '{"language":"python","language_ext":"py","runner":"python3","runner_flags":"-s","container_image":"python:3.11-slim","inputs":{"n":10},"inputs_json":"{\"n\":10}"}'
 ```
 
-The `AEGIS_API_TOKEN` in `.env` provides a dev bypass for bearer auth when OIDC is skipped. The local Keycloak enables full OIDC/JWT flows for the CLI and workers.
+`hello-world` is deployed but cannot start (schema requires `task`; the execute path wraps input). Use `aegis-python-executor-agent` or a Temporal workflow. See [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md).
 
 ## Documentation
 

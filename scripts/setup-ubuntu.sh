@@ -38,16 +38,26 @@ else
     die "/etc/os-release not found — cannot determine OS."
 fi
 
-[[ "${ID:-}" == "ubuntu" ]] || die "This script only supports Ubuntu (detected: ${ID:-unknown})."
-
 UBUNTU_VERSION="${VERSION_ID:-}"
-case "$UBUNTU_VERSION" in
-    22.04) UBUNTU_CODENAME="jammy" ;;
-    24.04) UBUNTU_CODENAME="noble" ;;
-    *) die "Unsupported Ubuntu version: ${UBUNTU_VERSION}. This script supports 22.04 (Jammy) and 24.04 (Noble)." ;;
+case "${ID:-}" in
+    ubuntu)
+        case "$UBUNTU_VERSION" in
+            22.04) UBUNTU_CODENAME="jammy" ;;
+            24.04) UBUNTU_CODENAME="noble" ;;
+            *) die "Unsupported Ubuntu version: ${UBUNTU_VERSION}. This script supports 22.04 (Jammy) and 24.04 (Noble)." ;;
+        esac
+        success "Detected Ubuntu ${UBUNTU_VERSION} (${UBUNTU_CODENAME})"
+        ;;
+    kali)
+        # Kali rolling ships Podman 4+ in the native repo (same path as Ubuntu 24.04).
+        UBUNTU_CODENAME="kali"
+        UBUNTU_VERSION="24.04"
+        success "Detected Kali ${VERSION_ID:-rolling} — using native Podman packages"
+        ;;
+    *)
+        die "This script only supports Ubuntu 22.04/24.04 or Kali (detected: ${ID:-unknown})."
+        ;;
 esac
-
-success "Detected Ubuntu ${UBUNTU_VERSION} (${UBUNTU_CODENAME})"
 
 # =============================================================================
 # PHASE 2 — Install Podman & runtime dependencies
@@ -341,9 +351,9 @@ echo -e "${BOLD}${GREEN}========================================================
 echo ""
 echo -e "  ${BOLD}Podman version:${RESET}     ${PODMAN_VERSION}"
 echo -e "  ${BOLD}Socket path:${RESET}        ${SOCKET_PATH}"
-echo -e "  ${BOLD}aegis version:${RESET}      $(/usr/local/bin/aegis --version 2>/dev/null || echo 'unknown')"
+echo -e "  ${BOLD}aegis version:${RESET}      $(${HOME}/.local/bin/aegis --version 2>/dev/null || echo 'unknown')"
 echo ""
-/usr/local/bin/aegis --help 2>/dev/null || true
+"${HOME}/.local/bin/aegis" --help 2>/dev/null || true
 echo ""
 echo -e "${BOLD}Next steps:${RESET}"
 echo ""

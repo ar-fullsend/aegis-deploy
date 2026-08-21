@@ -3,3 +3,4 @@ generated/
 local-volumes/
 *.pem
 bin/
+logs/

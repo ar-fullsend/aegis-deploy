@@ -14,11 +14,14 @@ spec:
       args:
         - start-dev
         - --http-port=8180
-        - --hostname=auth.localhost
+        # Admin UI is opened at http://127.0.0.1:8180 (no reverse proxy).
+        # auth.localhost + --proxy=edge makes the SPA hang on "Loading the Admin UI".
+        - --hostname-url=http://127.0.0.1:8180
+        - --hostname-admin-url=http://127.0.0.1:8180
         - --hostname-strict=false
         - --hostname-strict-https=false
-        - --proxy=edge
         - --health-enabled=true
+        - --metrics-enabled=true
       env:
         - name: KEYCLOAK_ADMIN
           value: "admin"

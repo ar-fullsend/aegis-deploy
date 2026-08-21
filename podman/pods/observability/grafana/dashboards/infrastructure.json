@@ -20,32 +20,32 @@
       "datasource": "Prometheus",
       "targets": [
         {
-          "expr": "up{job=\"aegis-runtime\"}",
+          "expr": "max(up{job=\"aegis-runtime\"})",
           "legendFormat": "AEGIS Runtime",
           "refId": "A"
         },
         {
-          "expr": "up{job=\"postgres\"}",
+          "expr": "max(up{job=\"postgres\"})",
           "legendFormat": "PostgreSQL",
           "refId": "B"
         },
         {
-          "expr": "up{job=\"temporal\"}",
+          "expr": "max(up{job=\"temporal\"})",
           "legendFormat": "Temporal",
           "refId": "C"
         },
         {
-          "expr": "up{job=\"keycloak\"}",
+          "expr": "max(up{job=\"keycloak\"})",
           "legendFormat": "Keycloak",
           "refId": "D"
         },
         {
-          "expr": "up{job=\"openbao\"}",
+          "expr": "max(up{job=\"openbao\"})",
           "legendFormat": "OpenBao",
           "refId": "E"
         },
         {
-          "expr": "up{job=\"seaweedfs-master\"}",
+          "expr": "max(up{job=\"seaweedfs-master\"})",
           "legendFormat": "SeaweedFS Master",
           "refId": "F"
         }

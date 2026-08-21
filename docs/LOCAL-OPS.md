@@ -46,10 +46,13 @@ Stack runs **inside WSL2**. Windows browser `http://127.0.0.1:PORT` is **Windows
 File: `podman/pods/core/aegis-config.yaml`
 
 - **Strategy:** `prefer-local`, `default_provider: lmstudio`
-- **LM Studio:** OpenAI-compat endpoint (set to your host; this checkout uses Tailscale `http://100.94.83.101:1234/v1`)
-- **Model id:** use a **literal** model name (e.g. `liquid/lfm2.5-1.2b`). `env:LM_STUDIO_MODEL` is **not** expanded for the model field.
-- **Aliases on lmstudio:** `default`, `slm`, `smart`, `judge`, `slm-judge` — all must exist on the local provider. Built-ins request `default`; if only Gemini has it, traffic goes cloud.
-- **Gemini:** disable when prepaid/quota is dead (`enabled: false`) so the stack does not 429-loop.
+- **LM Studio (host):** `http://127.0.0.1:1234` — server is already ON.
+- **From pods:** `http://host.containers.internal:1234/v1` (container `127.0.0.1` is not the host). LM Studio must bind `0.0.0.0` (`lms server start --bind 0.0.0.0`), not `127.0.0.1`.
+- **Model:** [prism-ml/bonsai-27b](https://lmstudio.ai/models/prism-ml/bonsai-27b) (`Bonsai-27B-Q1_0` GGUF). Load it in LM Studio, then confirm the API id:
+  `curl -s http://127.0.0.1:1234/v1/models`
+  If the `id` differs from `prism-ml/bonsai-27b`, update every `model:` field in `aegis-config.yaml`.
+- **Aliases on lmstudio:** `default`, `slm`, `smart`, `judge`, `slm-judge` — all point at Bonsai. Built-ins request `default`.
+- **Gemini:** `enabled: false` unless `ZARU_LLM_API_KEY` is set.
 - After edits: `podman restart aegis-core-aegis-runtime` (config is hostPath-mounted).
 
 **Note:** Small SLMs often fail workflow-generator / creator agents with **context size exceeded**. Simple agent execute and YAML workflow register still work.
@@ -57,38 +60,59 @@ File: `podman/pods/core/aegis-config.yaml`
 ## API auth
 
 - `AEGIS_API_TOKEN` is **not** a JWT → `Unauthorized` / `InvalidToken` on `/v1/*`.
+- Keycloak **issuer** is `http://127.0.0.1:8180/realms/aegis-system`. Do **not** use `auth.localhost` or `--proxy=edge` without a reverse proxy — that hangs the Admin UI on “Loading the Admin UI”.
+- Admin console: <http://127.0.0.1:8180/admin/> (`admin` / `changeme` unless you changed `KEYCLOAK_ADMIN_PASSWORD`).
+- Bootstrap (`scripts/bootstrap-keycloak.sh`) creates client `aegis-runtime` with secret **`placeholder`** (not `aegis-dev-secret`).
 - Working non-interactive token:
 
 ```bash
-TOKEN=$(curl -sS -X POST 'http://localhost:8180/realms/aegis-system/protocol/openid-connect/token' \
+TOKEN=$(curl -sS -X POST 'http://127.0.0.1:8180/realms/aegis-system/protocol/openid-connect/token' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d 'client_id=aegis-runtime&client_secret=aegis-dev-secret&grant_type=client_credentials' \
+  -d 'client_id=aegis-runtime&client_secret=placeholder&grant_type=client_credentials' \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 ```
 
-Requires `make bootstrap-keycloak` once (idempotent).
+Requires `make bootstrap-keycloak` once (idempotent). Re-run after changing scopes. The client needs `agent:list`, `agent:execute`, `execution:read`, `workflow:run`, and related scopes assigned as default client scopes.
 
-## Smoke: agent execute
+## Agent execute vs Temporal workflows
+
+These are **different surfaces**. [docs.100monkeys.ai workflows](https://docs.100monkeys.ai/docs/workflows/building-workflows) are Temporal FSMs. Direct agent execute is in-process on `aegis-runtime`.
+
+| Action | CLI | Shows in Temporal UI (`:8233`, namespace `default`)? |
+|---|---|---|
+| Spawn an agent | `aegis agent run <name> --intent '...'` | **No** — use `aegis task status` / `task logs` |
+| Run a workflow | `aegis workflow run builtin-intent-to-execution --intent '...'` | **Yes** — type `aegis_workflow`, queue `aegis-agents` |
+
+`hello-world` is registered but **cannot start**: its `input_schema` requires top-level `task`, and the runtime validates a wrapped object that does not have `task`. Use `aegis-python-executor-agent` (no schema) for a first spawn:
 
 ```bash
-# list agents
-curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8088/v1/agents
-
-# execute (example: slm-executor)
-EID=$(curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"input":{"task":"write def add(a,b): return a+b"}}' \
-  http://127.0.0.1:8088/v1/agents/<AGENT_ID>/execute \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["execution_id"])')
-
-# poll
-curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8088/v1/executions/$EID
+AEGIS_KEY="$TOKEN" aegis --host 127.0.0.1 --port 8088 --output json \
+  agent run aegis-python-executor-agent \
+  --intent 'Write a Python function fib(n) that returns the first n Fibonacci numbers. Save it to /workspace/solution.py and self-test it.'
 ```
 
-Confirm LLM path in logs:
+Then:
+
+```bash
+AEGIS_KEY="$TOKEN" aegis --host 127.0.0.1 --port 8088 task logs <execution_id> --follow
+```
+
+To see work in Temporal:
+
+```bash
+AEGIS_KEY="$TOKEN" aegis --host 127.0.0.1 --port 8088 --output json \
+  workflow run builtin-intent-to-execution \
+  --intent 'Write a Python function fib(n) that returns the first n Fibonacci numbers.' \
+  --input '{"language":"python","language_ext":"py","runner":"python3","runner_flags":"-s","container_image":"python:3.11-slim","inputs":{"n":10},"inputs_json":"{\"n\":10}"}'
+```
+
+Open <http://127.0.0.1:8233/namespaces/default/workflows> (not `temporal-system`).
+
+Confirm LLM path:
 
 ```bash
 podman logs --since 5m aegis-core-aegis-runtime 2>&1 | grep -E 'LLM inference|LLM HTTP'
-# expect: provider=openai endpoint ...:1234/v1/chat/completions status=200
+# expect: model=prism-ml/bonsai-27b endpoint=http://host.containers.internal:1234/v1/chat/completions
 ```
 
 ## Register a workflow record (YAML)
@@ -134,8 +158,42 @@ make redeploy POD=edge
 curl -sS http://127.0.0.1/   # → aegis-edge ok (from WSL)
 ```
 
+## Grafana “Runtime / Keycloak / OpenBao down”
+
+Those panels use Prometheus `up{job=...}`. The processes can be healthy while scrapes fail:
+
+| Job | Real health | Scrape failure | Fix in this repo |
+|---|---|---|---|
+| `aegis-runtime` | `:8088/health` 200 | Metrics bind `127.0.0.1:9091` | `metrics-proxy` sidecar on **:9092**; Prometheus target `aegis-core:9092` |
+| `keycloak` | `:8180/health/ready` 200 | `/metrics` 404 | `--metrics-enabled=true` |
+| `openbao` | `/v1/sys/health` 200 | `/v1/sys/metrics` 403 | `unauthenticated_metrics_access` on the **listener** stanza, not only top-level `telemetry` |
+
+Dashboard queries use `max(up{job="..."})` so a stale instance label cannot keep a panel red.
+
+## FUSE daemon
+
+Unit: `~/.config/systemd/user/aegis-fuse-daemon.service`  
+Binary: `$REPO/bin/aegis` → `~/.local/bin/aegis` (`ExecStart=%h/.local/bin/aegis`). Not `/usr/local/bin/aegis`.
+
+Cold start: daemon needs orchestrator `:50051`. The unit retries with `StartLimitIntervalSec=0`. After core is up:
+
+```bash
+systemctl --user reset-failed aegis-fuse-daemon
+systemctl --user restart aegis-fuse-daemon
+```
+
+## Host notes (this checkout)
+
+- `make setup` supports **Ubuntu 22.04/24.04 and Kali** (native Podman packages on Kali).
+- Infra can come up with **no LLM**. Enable LM Studio when a model is loaded.
+- User-local tools used by bootstrap: `~/.local/bin/bao`, `~/.local/bin/jq` (not always on the distro).
+- Pod DNS is the **pod** name (`aegis-temporal`, `aegis-observability`), not container names (`temporal`, `otelcol`).
+- `AEGIS_OTLP_ENDPOINT=http://aegis-observability:4317`
+
 ## Known non-blockers
 
 - Cortex missing → WARN "memoryless mode"
 - Cold `make deploy` is slow (many image pulls); `install-cli` may run twice
-- Early `make validate` can fail while Keycloak warms up — re-check once
+- Early `make validate` can fail while Keycloak/Loki warm up — re-check once
+- Temporal UI on host `:8233` has **no** Caddy basic auth in this checkout (vars `TEMPORAL_UI_*` are unused unless edge is deployed)
+- `hello-world` agent cannot start (input_schema `task` vs wrapped execute payload)

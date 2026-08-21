@@ -42,7 +42,7 @@ echo "  -> Extracting aegis CLI from image..."
 bash "$SCRIPT_DIR/install-aegis-cli.sh"
 
 # Ensure FUSE daemon systemd unit is up to date (in case service file changed)
-# Do this after binary extract so /usr/local/bin/aegis symlink exists
+# Do this after binary extract so ~/.local/bin/aegis exists
 mkdir -p ~/.config/systemd/user
 if ! cmp -s "$ROOT_DIR/systemd/aegis-fuse-daemon.service" ~/.config/systemd/user/aegis-fuse-daemon.service 2>/dev/null; then
     cp "$ROOT_DIR/systemd/aegis-fuse-daemon.service" ~/.config/systemd/user/

@@ -30,7 +30,7 @@ echo "LM Studio is up."
 echo "Getting auth token..."
 TOKEN=$(curl -s -X POST "$KEYCLOAK_URL/realms/aegis-system/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "client_id=aegis-runtime&client_secret=aegis-dev-secret&grant_type=client_credentials" | \
+    -d "client_id=aegis-runtime&client_secret=placeholder&grant_type=client_credentials" | \
     python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
@@ -112,7 +112,7 @@ echo ""
 echo "Run the SLM agent:"
 echo "  TOKEN=\$(curl -s -X POST \"$KEYCLOAK_URL/realms/aegis-system/protocol/openid-connect/token\" \\"
 echo "    -H \"Content-Type: application/x-www-form-urlencoded\" \\"
-echo "    -d \"client_id=aegis-runtime&client_secret=aegis-dev-secret&grant_type=client_credentials\" | python3 -c \"import sys,json; print(json.load(sys.stdin)['access_token'])\")"
+echo "    -d \"client_id=aegis-runtime&client_secret=placeholder&grant_type=client_credentials\" | python3 -c \"import sys,json; print(json.load(sys.stdin)['access_token'])\")"
 echo ""
 echo "  AGENT_ID=\$(curl -s -H \"Authorization: Bearer \$TOKEN\" \"$RUNTIME_URL/v1/agents\" | python3 -c \"import sys,json; agents=[a for a in json.load(sys.stdin) if a['name']=='slm-executor']; print(agents[0]['id'] if agents else 'not found')\")"
 echo ""

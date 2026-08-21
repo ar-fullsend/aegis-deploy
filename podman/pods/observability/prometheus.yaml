@@ -9,7 +9,7 @@ scrape_configs:
   # AEGIS Core Runtime
   - job_name: aegis-runtime
     static_configs:
-      - targets: ['aegis-core:9091']
+      - targets: ['aegis-core:9092']
         labels:
           service: aegis-runtime
           context: core

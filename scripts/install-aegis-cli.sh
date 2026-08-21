@@ -63,9 +63,9 @@ ln -sf "${BIN_PATH}" "${HOME}/.local/bin/aegis"
 # shellcheck source=scripts/lib/systemd-user.sh
 source "$SCRIPT_DIR/lib/systemd-user.sh"
 
-# Restart the FUSE daemon so it picks up the new binary
+# Restart the FUSE daemon so it picks up the new binary.
+# Unit may not be installed yet on a cold setup — do not fail the extract.
 info "Restarting aegis-fuse-daemon..."
-systemctl --user restart aegis-fuse-daemon
-success "aegis-fuse-daemon restarted"
+systemctl --user restart aegis-fuse-daemon 2>/dev/null || true
 
-success "Installed aegis to ${BIN_PATH} and symlinked to /usr/local/bin/aegis (from ${IMAGE})"
+success "Installed aegis to ${BIN_PATH} and symlinked to ${HOME}/.local/bin/aegis (from ${IMAGE})"

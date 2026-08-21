@@ -85,6 +85,14 @@ spec:
           port: 8088
         initialDelaySeconds: 10
         periodSeconds: 10
+    # Runtime metrics bind 127.0.0.1:9091. Proxy them on the pod IP for Prometheus.
+    - name: metrics-proxy
+      image: docker.io/alpine/socat:1.8.0.0
+      args:
+        - TCP-LISTEN:9092,fork,reuseaddr,bind=0.0.0.0
+        - TCP:127.0.0.1:9091
+      ports:
+        - containerPort: 9092
 
   volumes:
     - name: container-sock

@@ -12,7 +12,7 @@ AI assistant context for the **aegis-deploy** repository. `CLAUDE.md` is a symli
 - Deployment profiles that select which pods to run
 - A systemd user service for the FUSE daemon
 
-The primary technology is **rootless Podman 4.0+** running on **Ubuntu 22.04/24.04**. There is no Node.js, Python, or compiled code to build in this repo.
+The primary technology is **rootless Podman 4.0+** on **Ubuntu 22.04/24.04 or Kali**. There is no application source to build in this repo.
 
 ## Repository Layout
 
@@ -50,7 +50,7 @@ aegis-deploy/
 ├── scripts/
 │   ├── deploy.sh                # Deployment orchestrator (reads profile → deploys pods in order)
 │   ├── teardown.sh              # Stops/removes pods for a profile
-│   ├── setup-ubuntu.sh          # Installs Podman + fuse3 on Ubuntu
+│   ├── setup-ubuntu.sh          # Installs Podman on Ubuntu 22.04/24.04 or Kali
 │   ├── bootstrap-openbao.sh     # Initializes OpenBao + AppRole; writes ROLE_ID/SECRET_ID to .env
 │   ├── bootstrap-keycloak.sh    # Realm/clients/roles for local OIDC
 │   ├── bootstrap-slm.sh         # Register slm-executor when LM Studio is up
@@ -72,14 +72,14 @@ aegis-deploy/
 
 ## Pod Architecture
 
-All pods join `aegis-network` (Podman bridge). Internal DNS resolution uses container names (e.g., `aegis-database`, `temporal`, `otelcol`).
+All pods join `aegis-network` (Podman bridge). Internal DNS is the **pod** name (`aegis-temporal`, `aegis-observability`), not container names (`temporal`, `otelcol`).
 
 | Pod | Key Services | Exposed Ports |
 |---|---|---|
-| **pod-core** | aegis-runtime | 8088 (HTTP API), 50051 (gRPC), 2049 (NFS), 9091 (metrics) |
-| **pod-database** | PostgreSQL 15, postgres-exporter | 5432, 9187 |
+| **pod-core** | aegis-runtime, metrics-proxy | 8088 (HTTP API), 50051 (gRPC), 2049 (NFS), 9091 (loopback metrics), 9092 (Prometheus) |
+| **pod-database** | PostgreSQL 15, PgBouncer, postgres-exporter | 5432, 5433, 9187 |
 | **pod-secrets** | OpenBao | 8200 |
-| **pod-temporal** | Temporal 1.23, Temporal UI, aegis-temporal-worker | 7233 (gRPC), 8233 (UI via Caddy basic auth) |
+| **pod-temporal** | Temporal 1.23, Temporal UI, aegis-temporal-worker | 7233 (gRPC), 8233 (UI, no in-pod Caddy auth) |
 | **pod-iam** | Keycloak 24 | 8180 |
 | **pod-seal-gateway** | aegis-seal-gateway | 8089 (HTTP), 50055 (gRPC) |
 | **pod-observability** | Jaeger 1.55, Prometheus 2.51, Grafana 10.4, Loki 3.0, Promtail 3.0, otelcol-contrib 0.99 | 16686 (Jaeger), 4317/4318 (OTLP→otelcol), 9090 (Prometheus), 3300 (Grafana), 3100 (Loki) |
@@ -87,16 +87,17 @@ All pods join `aegis-network` (Podman bridge). Internal DNS resolution uses cont
 | **pod-edge** | Caddy (local HTTP reverse-proxy; optional CF TLS) | 80, 443 |
 | **host** | FUSE daemon (systemd user service) | 50053 (gRPC, host-only) |
 
-The observability pipeline: services export OTLP traces to **otelcol** (port 4317), which fans out to Jaeger (traces) and Prometheus remote write (metrics).
+The observability pipeline: services export OTLP to **otelcol** at `aegis-observability:4317`. Traces go to Jaeger; metrics are Prometheus scrape (not otelcol remote-write). Grafana `up` jobs: runtime `:9092`, Keycloak `/metrics`, OpenBao listener unauthenticated metrics.
 
 ### Hard rules for agents working this repo
 
-1. **Read `docs/LOCAL-OPS.md` first** — do not re-discover WSL2 / LLM / JWT pitfalls.
+1. **Read `docs/LOCAL-OPS.md` first** — WSL2 / LLM / JWT / Temporal vs agent execute.
 2. **WSL2:** Windows browser must use WSL eth0 IP, never `127.0.0.1`.
-3. **LLM config** in `aegis-config.yaml`: prefer-local; literal model ids; `default` alias on local provider; disable dead Gemini.
-4. **Auth:** Keycloak client credentials (`aegis-runtime` / `aegis-dev-secret`), not `AEGIS_API_TOKEN`.
-5. **Profiles** live in `profiles/*.conf` — docs lag; trust the conf files.
-6. Low padding. Prefer action over re-scanning the whole tree.
+3. **LLM:** `host.containers.internal:1234`; LM Studio bind `0.0.0.0`; literal model ids (`prism-ml/bonsai-27b`); Gemini off unless keyed.
+4. **Auth:** `aegis-runtime` / **`placeholder`**, issuer `http://127.0.0.1:8180`. Not `AEGIS_API_TOKEN`. Not `auth.localhost`.
+5. **`aegis agent run` is not a Temporal workflow.** Temporal UI only shows `aegis workflow run`.
+6. **Profiles** live in `profiles/*.conf` — trust the conf files.
+7. Low padding. Prefer action over re-scanning the whole tree.
 
 ## Deployment Workflows
 
@@ -104,7 +105,7 @@ The observability pipeline: services export OTLP traces to **otelcol** (port 431
 
 ```bash
 cp .env.example .env            # fill in required vars (see below)
-make setup                      # install Podman + fuse3 on Ubuntu
+make setup                      # install Podman on Ubuntu or Kali
 make deploy                     # deploy default "development" profile
 make bootstrap-secrets          # initialize OpenBao; writes ROLE_ID + SECRET_ID to .env
 make bootstrap-keycloak         # configure Keycloak realm, clients, roles
@@ -157,7 +158,7 @@ make status
 
 The FUSE daemon runs on the **host** as a systemd user service, not inside a pod. This is required because rootless Podman containers cannot mount FUSE filesystems internally.
 
-**Binary location**: `~/100monkeys/aegis-deploy/bin/aegis` (extracted at deploy time from the runtime container image — the `bin/` directory is gitignored)
+**Binary location**: `$REPO/bin/aegis` → `~/.local/bin/aegis` (extracted at deploy time; `bin/` is gitignored). Systemd `ExecStart` is `%h/.local/bin/aegis`, not `/usr/local/bin`.
 
 **Service file**: `systemd/aegis-fuse-daemon.service`
 
@@ -183,7 +184,7 @@ Required variables in `.env` (copy from `.env.example`):
 | `GHCR_USERNAME` | Yes | GitHub username for `ghcr.io/100monkeys-ai` |
 | `GHCR_TOKEN` | Yes | GitHub PAT with `read:packages` scope |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
-| `ZARU_LLM_API_KEY` | Yes | Google Gemini API key |
+| `ZARU_LLM_API_KEY` | No | Gemini key; unused while Gemini is disabled |
 | `AEGIS_IMAGE_TAG` | Yes | Image tag to deploy (default: `latest`) |
 | `TEMPORAL_UI_USER` | Recommended | Temporal UI basic auth username |
 | `TEMPORAL_UI_PASSWORD_HASH` | Recommended | bcrypt hash for Temporal UI (generate with `podman exec aegis-zaru-edge-caddy caddy hash-password --plaintext 'yourpassword'`) |
@@ -252,6 +253,9 @@ Common scopes: `observability`, `core`, `temporal`, `secrets`, `storage`, `edge`
 - **`make deploy` is idempotent** — `podman play kube --replace` tears down and recreates pods; safe to re-run
 - **Bootstrap is one-time** — `bootstrap-openbao.sh` and `bootstrap-keycloak.sh` detect already-initialized state; safe to re-run but only do real work on first run
 - **Pod-edge is not in any profile** — deploy it manually for production: `make redeploy POD=edge`
-- **Temporal UI uses Caddy basic auth** — the UI itself has no built-in auth; Caddy in the pod proxies it with HTTP basic auth configured via `TEMPORAL_UI_USER`/`TEMPORAL_UI_PASSWORD_HASH`
-- **Database connection pooling** — services connect to PgBouncer on port 5433 (transaction mode), not directly to PostgreSQL on 5432
-- **OTLP tracing endpoint** — services send traces to `otelcol:4317`; the collector fans out to Jaeger (display) and Prometheus remote write (metrics)
+- **Temporal UI is unauthenticated on host :8233** in this checkout (`TEMPORAL_UI_*` unused unless edge is deployed)
+- **Database connection pooling** — runtime/SEAL use PgBouncer `:5433`; Temporal server and Keycloak still use Postgres `:5432`
+- **OTLP** — `AEGIS_OTLP_ENDPOINT=http://aegis-observability:4317` (pod DNS, not `otelcol`)
+- **Keycloak Admin UI** — `hostname-url=http://127.0.0.1:8180`; do not set `auth.localhost` + `--proxy=edge` without Caddy
+- **`hello-world` cannot execute** — input_schema `task` vs wrapped payload; use `aegis-python-executor-agent` or `builtin-intent-to-execution`
+- **`logs/` is gitignored** — deploy bring-up logs live there locally

@@ -121,9 +121,14 @@ curl -s -X POST "$KEYCLOAK_URL/admin/realms/$REALM/clients" \
 
 echo "Client aegis-runtime created or exists"
 
-# Create custom client scopes needed by the temporal worker
-WORKER_SCOPES=("agent:read" "execution:stream" "workflow:read" "volume:read" "volume:write")
-for SCOPE in "${WORKER_SCOPES[@]}"; do
+# Create custom client scopes needed by runtime + temporal worker
+API_SCOPES=(
+  "agent:list" "agent:read" "agent:execute"
+  "execution:read" "execution:stream"
+  "workflow:read" "workflow:list" "workflow:run" "workflow:execute"
+  "volume:read" "volume:write"
+)
+for SCOPE in "${API_SCOPES[@]}"; do
   curl -s -X POST "$KEYCLOAK_URL/admin/realms/$REALM/client-scopes" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
@@ -131,21 +136,27 @@ for SCOPE in "${WORKER_SCOPES[@]}"; do
 done
 echo "Custom scopes created (or already exist)"
 
-# Assign required scopes to aegis-temporal-worker service account
-TW_UUID=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=aegis-temporal-worker" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" | python3 -c "import sys,json; c=json.load(sys.stdin); print(c[0]['id'] if c else '')" 2>/dev/null)
-
-if [[ -n "$TW_UUID" ]]; then
-  ALL_SCOPES=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM/client-scopes" -H "Authorization: Bearer $ADMIN_TOKEN")
-  for SCOPE in "agent:read" "agent:execute" "execution:read" "execution:stream" "workflow:read" "volume:read" "volume:write"; do
+ALL_SCOPES=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM/client-scopes" -H "Authorization: Bearer $ADMIN_TOKEN")
+assign_scopes() {
+  local client_id="$1"
+  local uuid
+  uuid=$(curl -s "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=$client_id" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" | python3 -c "import sys,json; c=json.load(sys.stdin); print(c[0]['id'] if c else '')" 2>/dev/null)
+  if [[ -z "$uuid" ]]; then
+    echo "WARN: client $client_id not found"
+    return
+  fi
+  for SCOPE in "${API_SCOPES[@]}"; do
     SCOPE_ID=$(echo "$ALL_SCOPES" | python3 -c "import sys,json; s={x['name']:x['id'] for x in json.load(sys.stdin)}; print(s.get('$SCOPE',''))" 2>/dev/null)
     if [[ -n "$SCOPE_ID" ]]; then
-      curl -s -X PUT "$KEYCLOAK_URL/admin/realms/$REALM/clients/$TW_UUID/default-client-scopes/$SCOPE_ID" \
+      curl -s -X PUT "$KEYCLOAK_URL/admin/realms/$REALM/clients/$uuid/default-client-scopes/$SCOPE_ID" \
         -H "Authorization: Bearer $ADMIN_TOKEN" -o /dev/null
     fi
   done
-  echo "Scopes assigned to aegis-temporal-worker"
-fi
+  echo "Scopes assigned to $client_id"
+}
+assign_scopes aegis-temporal-worker
+assign_scopes aegis-runtime
 
 echo "==> Keycloak bootstrap complete (basic realm and clients)"
 echo "You may need to create users, roles, and additional clients via the admin console at $KEYCLOAK_URL"

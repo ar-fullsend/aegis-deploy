@@ -9,12 +9,14 @@ Type=simple
 Environment=RUST_LOG=info
 Environment=AEGIS_FUSE_DAEMON_LISTEN_ADDR=0.0.0.0:50053
 Environment=AEGIS_FUSE_DAEMON_ENDPOINT=http://host.containers.internal:50053
-ExecStart=/usr/local/bin/aegis fuse-daemon start \
+ExecStart=%h/.local/bin/aegis fuse-daemon start \
   --orchestrator-url grpc://127.0.0.1:50051 \
   --mount-prefix /tmp/aegis-fuse-mounts \
   --listen-addr ${AEGIS_FUSE_DAEMON_LISTEN_ADDR}
 Restart=always
-RestartSec=3
+RestartSec=5
+# Cold start: orchestrator :50051 is not up yet. Keep retrying.
+StartLimitIntervalSec=0
 
 [Install]
 WantedBy=default.target
