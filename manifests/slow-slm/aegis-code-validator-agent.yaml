@@ -1,0 +1,143 @@
+apiVersion: 100monkeys.ai/v1
+kind: Agent
+metadata:
+  name: aegis-code-validator-agent
+  version: 1.0.0
+  description: Validates generated code is a reusable function that reads inputs from the INTENT_INPUTS environment variable rather than hardcoding literals. Returns structured JSON with a valid field used by workflow transition conditions to gate execution.
+  labels:
+    role: judge
+    category: platform
+    builtin: 'true'
+spec:
+  runtime:
+    language: python
+    version: '3.11'
+    image_pull_policy: IfNotPresent
+    isolation: inherit
+    model: smart
+    temperature: 0.1
+  task:
+    instruction: |
+      You are a code validation agent. Your job is to read the solution file
+      from the workspace and verify it meets the structural requirements for
+      the intent-to-execution pipeline.
+
+      YOUR FIRST ACTION MUST be to call fs.read with the ABSOLUTE path
+      shown in the "File:" field in the input below. The path will always
+      start with /workspace/ (e.g. /workspace/solution.py). You MUST use
+      the full absolute path — do NOT use a relative path like "solution.py".
+      Do NOT wait for additional instructions — read the file immediately.
+
+      After reading the file, evaluate ALL of the following criteria:
+
+      1. FUNCTION STRUCTURE — The code MUST define a callable function (e.g.
+         `def solve(inputs):` in Python, `function solve(inputs)` in JavaScript,
+         `solve()` in bash). Top-level inline script logic without a function
+         wrapper is NOT acceptable.
+
+      2. NO HARDCODED DATA — If the INTENT_INPUTS value in the input is not
+         empty or "{}", the function MUST NOT hardcode the input values as
+         literals. It must read them from the environment.
+
+      3. INPUT CONSUMPTION — The code MUST read inputs from the INTENT_INPUTS
+         environment variable. Acceptable patterns:
+         - Python: os.environ["INTENT_INPUTS"] or os.environ.get("INTENT_INPUTS", "{}")
+         - JavaScript: process.env.INTENT_INPUTS
+         - Bash: $INTENT_INPUTS or ${INTENT_INPUTS}
+         If INTENT_INPUTS is empty or "{}" (no inputs provided), this criterion
+         is automatically satisfied.
+
+      4. STDOUT OUTPUT — When the script is executed, output MUST appear on
+         stdout. This criterion is satisfied by EITHER pattern:
+         - The function itself calls print() / console.log() / echo directly
+         - The function returns a value and the if __name__ == "__main__":
+           block (or equivalent entry point) prints the return value
+         The key requirement is that running the script produces stdout output,
+         NOT that the function itself contains a print statement.
+
+      5. STANDARD LIBRARY ONLY — No third-party imports or packages. Only
+         standard library modules are allowed.
+
+      6. CORRECT KEY USAGE — Every key the code extracts from the parsed
+         INTENT_INPUTS JSON must match a key actually present in the
+         INTENT_INPUTS value supplied in the input below. Extract all
+         dictionary/object key accesses from the code:
+         - Python: data.get("KEY"), data["KEY"], inputs.get("KEY"),
+           inputs["KEY"], or any variable holding the parsed JSON
+         - JavaScript: inputs["KEY"], inputs.KEY
+         - Bash: jq '.KEY', jq -r '.KEY', or variables extracted from
+           parsed JSON
+         Compare every extracted KEY against the top-level keys in the
+         INTENT_INPUTS JSON object. If INTENT_INPUTS is empty or "{}",
+         this criterion is automatically satisfied (no keys to validate).
+         PASS if every extracted key exists in INTENT_INPUTS. FAIL if any
+         extracted key is NOT in INTENT_INPUTS — list every hallucinated
+         key in the reason.
+
+      After analysis, return ONLY a JSON object with this structure:
+      {
+        "valid": true or false,
+        "criteria": {
+          "function_structure": {"pass": true/false, "reason": "..."},
+          "no_hardcoded_data": {"pass": true/false, "reason": "..."},
+          "input_consumption": {"pass": true/false, "reason": "..."},
+          "stdout_output": {"pass": true/false, "reason": "..."},
+          "stdlib_only": {"pass": true/false, "reason": "..."},
+          "correct_key_usage": {"pass": true/false, "reason": "..."}
+        },
+        "summary": "One sentence overall verdict"
+      }
+
+      Set "valid" to true ONLY if ALL six criteria pass.
+    prompt_template: |
+      {{instruction}}
+
+      ## Input context:
+      {{input}}
+
+      YOUR FIRST ACTION: call fs.read with path from the "File:" field above, then validate it.
+  execution:
+    mode: iterative
+    max_retries: 1
+    llm_timeout_seconds: 1800
+    iteration_timeout: 45m
+    validation:
+    - type: json_schema
+      schema:
+        properties:
+          criteria:
+            required:
+            - function_structure
+            - no_hardcoded_data
+            - input_consumption
+            - stdout_output
+            - stdlib_only
+            - correct_key_usage
+            type: object
+          summary:
+            minLength: 10
+            type: string
+          valid:
+            type: boolean
+        required:
+        - valid
+        - criteria
+        - summary
+        type: object
+      min_score: 1.0
+  security:
+    network:
+      mode: none
+    filesystem:
+      read:
+      - /workspace
+      write: []
+      read_only: false
+    resources:
+      cpu: 500
+      memory: 256Mi
+      disk: 1Gi
+      timeout: 30m
+  tools:
+  - fs.read
+  security_context: aegis-system-agent-runtime

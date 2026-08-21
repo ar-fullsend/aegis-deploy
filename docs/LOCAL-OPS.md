@@ -72,7 +72,7 @@ TOKEN=$(curl -sS -X POST 'http://127.0.0.1:8180/realms/aegis-system/protocol/ope
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 ```
 
-Requires `make bootstrap-keycloak` once (idempotent). Re-run after changing scopes. The client needs `agent:list`, `agent:execute`, `execution:read`, `workflow:run`, and related scopes assigned as default client scopes.
+Requires `make bootstrap-keycloak` once (idempotent). Re-run after changing scopes. The client needs `agent:list`, `agent:execute`, `agent:deploy`, `execution:read`, `workflow:run`, and related scopes assigned as default client scopes.
 
 ## Agent execute vs Temporal workflows
 
@@ -189,6 +189,18 @@ systemctl --user restart aegis-fuse-daemon
 - User-local tools used by bootstrap: `~/.local/bin/bao`, `~/.local/bin/jq` (not always on the distro).
 - Pod DNS is the **pod** name (`aegis-temporal`, `aegis-observability`), not container names (`temporal`, `otelcol`).
 - `AEGIS_OTLP_ENDPOINT=http://aegis-observability:4317`
+
+## Slow local SLM (Bonsai 27B)
+
+`WRITE_CODE` in `builtin-intent-to-execution` uses `aegis-python-executor-agent`. Stock timeouts are **120s LLM / 300s execution** — a thinking 27B will fail with:
+
+`Agent execution failed: Execution timed out after 300 seconds` at `WRITE_CODE`.
+
+Patched manifests: `manifests/slow-slm/` (30 min LLM, 30 min resource timeout). Redeploy after every `AEGIS_FORCE_DEPLOY_BUILTINS=true` reset.
+
+`aegis-config.yaml` `llm_overall_timeout_secs: 1800`.
+
+Optional: LM Studio → disable **Enable Thinking** for faster non-reasoning completions.
 
 ## Known non-blockers
 
