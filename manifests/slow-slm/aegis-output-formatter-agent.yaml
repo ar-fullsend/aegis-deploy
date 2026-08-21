@@ -2,7 +2,7 @@ apiVersion: 100monkeys.ai/v1
 kind: Agent
 metadata:
   name: aegis-output-formatter-agent
-  version: 1.0.0
+  version: 1.0.1
   description: General-purpose builtin output formatter. Receives raw execution output and contextual instructions. Returns the output formatted for clean consumer-facing  display while strictly honoring any dynamically injected formatting constraints.
   labels:
     category: platform
@@ -26,8 +26,8 @@ spec:
   execution:
     mode: iterative
     max_retries: 1
-    llm_timeout_seconds: 1800
-    iteration_timeout: 45m
+    llm_timeout_seconds: 300
+    iteration_timeout: 5m
   security:
     network:
       mode: none
@@ -39,5 +39,5 @@ spec:
       cpu: 250
       memory: 128Mi
       disk: 1Gi
-      timeout: 30m
+      timeout: 5m
   security_context: aegis-system-agent-runtime

@@ -81,7 +81,7 @@ RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$RUNTIME_URL/v1/agents" \
             "judge_model_alias": "slm-judge",
             "system_prompt": "You are a Python code generation assistant running on a local SLM. Write concise, correct Python functions based on the user task. Include a simple test at the bottom of the file to verify the function works.",
             "execution": {
-                "timeout_seconds": 120,
+                "timeout_seconds": 300,
                 "max_retries": 2,
                 "validation": [
                     {

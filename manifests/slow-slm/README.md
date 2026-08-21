@@ -1,12 +1,18 @@
-# Slow local SLM timeouts
+# Local SLM timeouts (5 minutes)
 
-Builtin executors used by `builtin-intent-to-execution` (`WRITE_CODE`) ship with `resources.timeout: 300s` and `llm_timeout_seconds: 120`. A local 27B thinking model (Bonsai) often spends the whole budget on `reasoning_content` and never finishes a tool call.
+All **execution** timeouts in this directory are **5 minutes**, using the field that matches each layer:
 
-This directory re-deploys those builtins with:
+| Context | Field | Value |
+|---|---|---|
+| Single LLM HTTP generate | `spec.execution.llm_timeout_seconds` | `300` |
+| One agent iteration | `spec.execution.iteration_timeout` | `5m` |
+| Agent container / FSAL wall clock | `spec.security.resources.timeout` | `5m` |
+| Orchestrator-wide LLM generate | `llm_selection.llm_overall_timeout_secs` in `aegis-config.yaml` | `300` |
+| Workflow Agent/ContainerRun **state** | `spec.states.*.timeout` | `5m` |
+| Isolated code container | `EXECUTE_CODE.resources.timeout` | `5m` |
+| Temporal output-handler activity | `output_handler.timeout_seconds` | `300` |
 
-- `llm_timeout_seconds: 1800` (30 minutes per LLM call)
-- `iteration_timeout: 45m`
-- `resources.timeout: 30m`
+Not changed: OTLP exporter `5s`, health probes, Prometheus scrapes, TCP checks in `validate-stack.sh`.
 
 ```bash
 TOKEN=$(curl -sS -X POST 'http://127.0.0.1:8180/realms/aegis-system/protocol/openid-connect/token' \
@@ -18,15 +24,10 @@ export AEGIS_KEY="$TOKEN"
 for f in manifests/slow-slm/aegis-*-agent.yaml; do
   aegis --host 127.0.0.1 --port 8088 agent deploy --force "$f"
 done
-```
-
-The pipeline’s `EXECUTE_CODE` **output_handler** still had `timeout_seconds: 60` (Temporal activity). Bonsai times out there even after the formatter agent itself is patched. `builtin-intent-to-execution.yaml` sets that to **1800**.
-
-```bash
 aegis --host 127.0.0.1 --port 8088 workflow deploy --force --scope global \
   manifests/slow-slm/builtin-intent-to-execution.yaml
 ```
 
-Do **not** set `AEGIS_FORCE_DEPLOY_BUILTINS=true` afterward — that restores stock 60s/300s builtins.
+Overlays use **version 1.0.1** so a core restart that re-deploys stock **1.0.0** builtins does not become latest. `aegis workflow run` / agent execute use latest.
 
-Faster option: in LM Studio turn **Enable Thinking** off for Bonsai so the model emits `content` instead of a long `reasoning_content` preamble.
+A thinking 27B may still exceed 5 minutes; disable **Enable Thinking** in LM Studio if generate calls stall.

@@ -3,7 +3,7 @@ apiVersion: 100monkeys.ai/v1
 kind: Workflow
 metadata:
   name: builtin-intent-to-execution
-  version: 1.0.0
+  version: 1.0.1
   description: Seamless intent-to-execution pipeline. Accepts a natural-language intent and optional typed inputs, dispatches to a builtin language executor agent to write code to an ephemeral workspace volume, executes it in an isolated container, and returns a formatted result via output_handler. Invoked via the aegis.execute.intent MCP tool from Zaru Execute mode.
   labels:
     type: builtin-execute
@@ -78,7 +78,7 @@ spec:
       resources:
         cpu: 500
         memory: 256Mi
-        timeout: 10m
+        timeout: 5m
       registry_credentials: null
       retry: null
       shell: false
@@ -97,13 +97,13 @@ spec:
           Preserve all data from the output. If the output is structured
           (JSON, table, list), keep it intact. Clean up formatting artifacts
           but do not summarize or condense.
-        timeout_seconds: 1800
+        timeout_seconds: 300
         required: true
       transitions:
       - condition: exit_code_non_zero
         target: EXECUTION_FAILED
         feedback: null
-      timeout: null
+      timeout: 5m
       max_state_visits: 3
     VALIDATE_CODE:
       kind: Agent
@@ -130,7 +130,7 @@ spec:
       - condition: on_failure
         target: WRITE_FAILED
         feedback: null
-      timeout: null
+      timeout: 5m
       max_state_visits: 3
     WRITE_CODE:
       kind: Agent
@@ -172,7 +172,7 @@ spec:
       - condition: on_failure
         target: WRITE_FAILED
         feedback: null
-      timeout: null
+      timeout: 5m
       max_state_visits: 3
     WRITE_FAILED:
       kind: System

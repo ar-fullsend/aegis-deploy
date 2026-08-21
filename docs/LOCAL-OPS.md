@@ -190,19 +190,24 @@ systemctl --user restart aegis-fuse-daemon
 - Pod DNS is the **pod** name (`aegis-temporal`, `aegis-observability`), not container names (`temporal`, `otelcol`).
 - `AEGIS_OTLP_ENDPOINT=http://aegis-observability:4317`
 
-## Slow local SLM (Bonsai 27B)
+## Execution timeouts (5 minutes)
 
-`WRITE_CODE` in `builtin-intent-to-execution` uses `aegis-python-executor-agent`. Stock timeouts are **120s LLM / 300s execution** — a thinking 27B will fail with:
+Local SLM overlays in `manifests/slow-slm/` set **5 minutes** on every execution layer (right field for each):
 
-`Agent execution failed: Execution timed out after 300 seconds` at `WRITE_CODE`.
+| Layer | Field | Value |
+|---|---|---|
+| LLM generate | `llm_timeout_seconds` / `llm_overall_timeout_secs` | `300` |
+| Agent iteration | `iteration_timeout` | `5m` |
+| Agent resource wall clock | `security.resources.timeout` | `5m` |
+| Workflow state (WRITE/VALIDATE/EXECUTE) | `states.*.timeout` | `5m` |
+| Isolated code run | `EXECUTE_CODE.resources.timeout` | `5m` |
+| Formatter Temporal activity | `output_handler.timeout_seconds` | `300` |
 
-Patched manifests: `manifests/slow-slm/` (30 min LLM, 30 min resource timeout, **1800s output_handler** on `EXECUTE_CODE`). Redeploy after every `AEGIS_FORCE_DEPLOY_BUILTINS=true` reset.
+Overlays are **v1.0.1** so stock **v1.0.0** builtins re-applied on core start stay underneath. Latest = 5 minute timeouts.
 
-A Temporal `Activity task failed` at `EXECUTE_CODE` with 3 iterations is usually the **formatter activity** (`timeout_seconds: 60` in the stock workflow), not the Python container. WRITE_CODE/VALIDATE succeeding then failing on EXECUTE_CODE matches that.
+A Temporal `Activity task failed` at `EXECUTE_CODE` with 3 iterations is usually the **formatter activity**, not the Python container.
 
-`aegis-config.yaml` `llm_overall_timeout_secs: 1800`.
-
-Optional: LM Studio → disable **Enable Thinking** for faster non-reasoning completions.
+Thinking 27B models may still exceed 5 minutes — disable **Enable Thinking** in LM Studio if needed.
 
 ## Known non-blockers
 
