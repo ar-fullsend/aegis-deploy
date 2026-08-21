@@ -22,8 +22,8 @@ aegis-deploy/
 ├── .env.example                 # Environment variable template; copy to .env
 ├── profiles/
 │   ├── minimal.conf             # PODS="secrets core"
-│   ├── development.conf         # PODS="database secrets temporal seal-gateway iam core storage observability"
-│   └── full.conf                # PODS="database secrets storage temporal seal-gateway core observability"
+│   ├── development.conf         # PODS="database secrets temporal seal-gateway iam core mcp storage observability"
+│   └── full.conf                # PODS="database secrets storage temporal seal-gateway core mcp observability"
 ├── podman/
 │   ├── networks/create-networks.sh  # Creates aegis-network bridge
 │   └── pods/                    # One directory per pod
@@ -38,6 +38,7 @@ aegis-deploy/
 │       │   ├── pod-seal-gateway.yaml
 │       │   └── seal-gateway-config.yaml
 │       ├── iam/pod-iam.yaml
+│       ├── mcp/pod-mcp.yaml         # zaru-mcp-server (aegis-mcp-tools)
 │       ├── observability/
 │       │   ├── pod-observability.yaml
 │       │   ├── prometheus.yaml      # Scrape config
@@ -82,6 +83,7 @@ All pods join `aegis-network` (Podman bridge). Internal DNS is the **pod** name 
 | **pod-temporal** | Temporal 1.23, Temporal UI, aegis-temporal-worker | 7233 (gRPC), 8233 (UI, no in-pod Caddy auth) |
 | **pod-iam** | Keycloak 24 | 8180 |
 | **pod-seal-gateway** | aegis-seal-gateway | 8089 (HTTP), 50055 (gRPC) |
+| **pod-mcp** | zaru-mcp-server | 8090 (host) → 3000 (`/mcp/v1`, `/health`) |
 | **pod-observability** | Jaeger 1.55, Prometheus 2.51, Grafana 10.4, Loki 3.0, Promtail 3.0, otelcol-contrib 0.99 | 16686 (Jaeger), 4317/4318 (OTLP→otelcol), 9090 (Prometheus), 3300 (Grafana), 3100 (Loki) |
 | **pod-storage** | SeaweedFS (master, volume, filer, WebDAV) | 9333, 8080, 8888, 7333 |
 | **pod-edge** | Caddy (local HTTP reverse-proxy; optional CF TLS) | 80, 443 |

@@ -8,8 +8,8 @@ Update it when behavior changes.
 | Profile | Pods |
 |---|---|
 | `minimal` | `secrets core` |
-| `development` (default) | `database secrets temporal seal-gateway iam core storage observability` |
-| `full` | `database secrets storage temporal seal-gateway core observability` (**no iam**) |
+| `development` (default) | `database secrets temporal seal-gateway iam core mcp storage observability` |
+| `full` | `database secrets storage temporal seal-gateway core mcp observability` (**no iam**) |
 
 `edge` is **not** in any profile. Deploy with:
 
@@ -34,6 +34,7 @@ Stack runs **inside WSL2**. Windows browser `http://127.0.0.1:PORT` is **Windows
 | Keycloak | 8180 |
 | Temporal UI | 8233 |
 | SEAL Gateway | 8089 |
+| Zaru MCP | 8090 `/health`, `/mcp/v1` |
 | OpenBao UI | 8200 `/ui/` |
 | Grafana | 3300 |
 | Prometheus | 9090 |
@@ -189,6 +190,31 @@ systemctl --user restart aegis-fuse-daemon
 - User-local tools used by bootstrap: `~/.local/bin/bao`, `~/.local/bin/jq` (not always on the distro).
 - Pod DNS is the **pod** name (`aegis-temporal`, `aegis-observability`), not container names (`temporal`, `otelcol`).
 - `AEGIS_OTLP_ENDPOINT=http://aegis-observability:4317`
+
+## Zaru MCP server ([aegis-mcp-tools](https://github.com/100monkeys-ai/aegis-mcp-tools))
+
+Pod `aegis-mcp` runs `ghcr.io/100monkeys-ai/zaru-mcp-server`. It does **not** implement tools itself: it lists `/v1/seal/tools` on the orchestrator and wraps every `tools/call` in a SEAL envelope (`POST /v1/seal/attest` + `/v1/seal/invoke`).
+
+| | |
+|---|---|
+| Health | http://127.0.0.1:8090/health |
+| MCP (StreamableHTTP) | http://127.0.0.1:8090/mcp/v1 |
+| SSE (legacy) | http://127.0.0.1:8090/mcp/v1/sse |
+| Local auth | `BYPASS_AUTH=true` — a Bearer token is still **required**, any string works |
+| JWKS (when bypass is off) | `http://aegis-iam:8180/realms/aegis-system/...` — JWT `iss` is `http://127.0.0.1:8180`, so real JWT auth from inside the pod needs a hostname fix; use bypass or a Keycloak JWT from the host |
+
+```bash
+# health
+curl -sS http://127.0.0.1:8090/health
+
+# MCP client (Claude Code)
+claude mcp add zaru --transport http http://127.0.0.1:8090/mcp/v1 \
+  --header "Authorization: Bearer $TOKEN"
+```
+
+Local tools on the MCP server (not forwarded): `zaru.init`, `zaru.mode`. Everything else is AEGIS tools via SEAL.
+
+Docs: https://docs.100monkeys.ai/docs/zaru/mcp-client-setup
 
 ## Execution timeouts (5 minutes)
 

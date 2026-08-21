@@ -31,8 +31,8 @@ Select a profile with `PROFILE=<name> make deploy`. Default: `development`.
 | Profile | Pods | Use Case |
 |---|---|---|
 | `minimal` | secrets, core | Local development with external DB |
-| `development` | database, secrets, temporal, seal-gateway, iam, core, storage, observability | Full local dev (includes IAM + SeaweedFS) |
-| `full` | database, secrets, storage, temporal, seal-gateway, core, observability | Complete platform storage path (**no** iam in profile) |
+| `development` | database, secrets, temporal, seal-gateway, iam, core, mcp, storage, observability | Full local dev (includes IAM + SeaweedFS + MCP) |
+| `full` | database, secrets, storage, temporal, seal-gateway, core, mcp, observability | Complete platform storage path (**no** iam in profile) |
 
 `edge` is optional and not in any profile: `make redeploy POD=edge`.
 
@@ -46,6 +46,7 @@ Select a profile with `PROFILE=<name> make deploy`. Default: `development`.
 | **pod-temporal** | Temporal 1.23 (auto-setup), Temporal UI 2.21, aegis-temporal-worker | 7233 (gRPC), 8233 (UI) |
 | **pod-iam** | Keycloak 24 | 8180 |
 | **pod-seal-gateway** | aegis-seal-gateway | 8089 (HTTP), 50055 (gRPC) |
+| **pod-mcp** | zaru-mcp-server ([aegis-mcp-tools](https://github.com/100monkeys-ai/aegis-mcp-tools)) | 8090 (MCP StreamableHTTP `/mcp/v1`) |
 | **pod-observability** | Jaeger 1.55, Prometheus 2.51, Grafana 10.4, Loki 3.0, Promtail 3.0, otelcol-contrib 0.99 | 16686 (Jaeger UI), 4317/4318 (OTLP → otelcol), 9090 (Prometheus), 3300 (Grafana), 3100 (Loki) |
 | **pod-storage** | SeaweedFS (master, volume, filer, WebDAV) | 9333 (master), 8080 (volume), 8888 (filer), 7333 (WebDAV) |
 | **host** | FUSE daemon (FuseMountService gRPC) | 50053 — runs on the host as a systemd user service, not in a pod |
@@ -98,6 +99,7 @@ The `pod-edge` directory contains a Caddy reverse proxy.
 |---|---|---|
 | `DOMAIN_API` | `api.localhost` | aegis-core:8088 |
 | `DOMAIN_SEAL` | `seal.localhost` | aegis-seal-gateway:8089 |
+| `DOMAIN_MCP` | `mcp.localhost` | aegis-mcp:**3000** (host maps 8090→3000) |
 | `DOMAIN_TEMPORAL` | `temporal.localhost` | aegis-temporal:8080 |
 | `DOMAIN_GRAFANA` | `grafana.localhost` | aegis-observability:**3000** (host maps 3300→3000) |
 | `DOMAIN_PROMETHEUS` | `prometheus.localhost` | aegis-observability:9090 |

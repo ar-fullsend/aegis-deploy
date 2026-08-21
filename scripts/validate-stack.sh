@@ -90,6 +90,11 @@ if has_pod seal-gateway; then
     check_http "SEAL Gateway" "http://localhost:8089"
 fi
 
+if has_pod mcp; then
+    echo "MCP:"
+    check_http "Zaru MCP Server" "http://localhost:8090/health"
+fi
+
 echo "IAM & Secrets:"
 if has_pod iam; then
     check_http "Keycloak" "http://localhost:8180/health/ready"

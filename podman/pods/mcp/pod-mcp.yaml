@@ -1,0 +1,41 @@
+# AEGIS MCP Pod — Zaru MCP server (100monkeys-ai/aegis-mcp-tools)
+# Proxies MCP tool calls to the orchestrator via SEAL envelopes.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aegis-mcp
+  labels:
+    app: aegis
+    context: mcp
+spec:
+  containers:
+    - name: zaru-mcp-server
+      image: "ghcr.io/100monkeys-ai/zaru-mcp-server:${AEGIS_IMAGE_TAG}"
+      env:
+        - name: PORT
+          value: "3000"
+        - name: LOG_LEVEL
+          value: info
+        - name: AEGIS_ORCHESTRATOR_URL
+          value: "http://aegis-core:8088"
+        - name: AEGIS_TOOL_DISCOVERY_URL
+          value: "http://aegis-core:8088/v1/seal/tools"
+        - name: JWKS_URI
+          value: "http://aegis-iam:8180/realms/aegis-system/protocol/openid-connect/certs"
+        - name: KEYCLOAK_SYSTEM_ISSUER
+          value: "http://127.0.0.1:8180/realms/aegis-system"
+        - name: BYPASS_AUTH
+          value: "true"
+        - name: CONTAINER_ID
+          value: "aegis-mcp"
+        - name: AEGIS_TOOL_CACHE_TTL_MS
+          value: "5000"
+      ports:
+        - containerPort: 3000
+          hostPort: 8090
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 3000
+        initialDelaySeconds: 5
+        periodSeconds: 10

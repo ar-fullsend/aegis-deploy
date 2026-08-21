@@ -39,7 +39,7 @@ http://{$DOMAIN_APP:app.localhost} {
 }
 
 http://{$DOMAIN_MCP:mcp.localhost} {
-	reverse_proxy aegis-core:8088
+	reverse_proxy aegis-mcp:3000
 }
 
 http://{$DOMAIN_PORTAINER:portainer.localhost} {
