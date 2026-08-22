@@ -1,10 +1,12 @@
 # Aegis Workstation Tuning — Summary
 
-**Date:** 2026-08-21
+**Date:** 2026-08-21 (host knobs); default model as of 2026-08-22 is Qwen2.5-Coder-7B-Instruct Q4_K_M.
 **Machine:** Intel i5-9400F (6c/6t), 16GB RAM, NVIDIA GTX 1660 Ti, Kali Linux
-**Context:** This machine runs a local LLM (llama.cpp / LM Studio, 27B model) as part of the Aegis
-AI workflow (100monkeys.ai). That workload's GPU/RAM usage is expected and intentional — this
-round of tuning targeted system-level overhead *around* it, not the model itself.
+**Context:** This machine runs a local LLM (llama.cpp / LM Studio) as part of the Aegis
+AI workflow (100monkeys.ai). The snapshots below were taken while **Bonsai 27B** was loaded
+(~5.8GB of 6GB VRAM). The deploy default is now **Qwen 7B Q4_K_M** (`lms load … --gpu max -c 4096`).
+That GPU/RAM usage is expected — this round of tuning targeted system-level overhead *around*
+the model, not the model itself.
 
 ## Changes made
 

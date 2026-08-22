@@ -50,7 +50,7 @@ aegis-deploy/
 │       └── edge/                # Optional reverse proxy (local HTTP or CF TLS)
 ├── scripts/
 │   ├── deploy.sh                # Deployment orchestrator (reads profile → deploys pods in order)
-│   ├── teardown.sh              # Stops/removes pods for a profile
+│   ├── teardown.sh              # Stops/removes pods for a profile (not LM Studio, not aegis-agent-*)
 │   ├── setup-ubuntu.sh          # Installs Podman on Ubuntu 22.04/24.04 or Kali
 │   ├── bootstrap-openbao.sh     # Initializes OpenBao + AppRole; writes ROLE_ID/SECRET_ID to .env
 │   ├── bootstrap-keycloak.sh    # Realm/clients/roles for local OIDC
@@ -59,11 +59,21 @@ aegis-deploy/
 │   ├── install-aegis-cli.sh     # Extracts aegis binary from container image → bin/
 │   ├── validate-stack.sh        # curl health checks against all service endpoints
 │   ├── init-multiple-dbs.sh     # PostgreSQL multi-database init script
-│   └── lib/systemd-user.sh      # Sets XDG_RUNTIME_DIR + DBUS_SESSION_BUS_ADDRESS for non-login shells
+│   ├── apply-slow-slm-overlays.sh  # Re-apply manifests/slow-slm after core is healthy
+│   ├── patch-host-gateway.sh    # Rewrite host.containers.internal to host LAN IP
+│   └── lib/
+│       ├── systemd-user.sh      # XDG_RUNTIME_DIR + DBUS_SESSION_BUS_ADDRESS for non-login shells
+│       └── host-lan-ip.sh       # Detect default-route src IPv4
 ├── systemd/
 │   └── aegis-fuse-daemon.service  # Systemd user service for host-side FUSE daemon (ADR-107)
+├── manifests/
+│   └── slow-slm/                # Timeout overlays (writers 1.0.2, formatter 1.0.3, workflow 1.0.4)
+├── pc-tuning/                   # Host I/O scheduler + swappiness notes (this workstation)
 ├── docs/
-│   └── LOCAL-OPS.md             # WSL2 browser rule, LLM, JWT smoke, workflow YAML
+│   ├── LOCAL-OPS.md             # Operator runbook: LLM, JWT, overlays, teardown
+│   ├── AEGIS-Local-SLM-Field-Report-2026-08-21.pdf
+│   ├── aegis-operator-2026-08-21.patch
+│   └── build-field-report.py    # Regenerates the field-report PDF
 ├── tests/
 │   └── test-systemd-user-env.sh   # Unit tests for scripts/lib/systemd-user.sh
 ├── .github/
@@ -93,13 +103,14 @@ The observability pipeline: services export OTLP to **otelcol** at `aegis-observ
 
 ### Hard rules for agents working this repo
 
-1. **Read `docs/LOCAL-OPS.md` first** — WSL2 / LLM / JWT / Temporal vs agent execute.
-2. **WSL2:** Windows browser must use WSL eth0 IP, never `127.0.0.1`.
-3. **LLM:** `host.containers.internal:1234`; LM Studio bind `0.0.0.0`; literal model id `qwen2.5-coder-7b-instruct` (Q4_K_M); Gemini off unless keyed. On Kali/netavark, `make deploy` / `make redeploy POD=core` must patch `host.containers.internal` to the host LAN IP (`scripts/patch-host-gateway.sh`) — pasta's `169.254.1.2` times out.
-4. **Auth:** `aegis-runtime` / **`placeholder`**, issuer `http://127.0.0.1:8180`. Not `AEGIS_API_TOKEN`. Not `auth.localhost`.
-5. **`aegis agent run` is not a Temporal workflow.** Temporal UI only shows `aegis workflow run`.
+1. **Read `docs/LOCAL-OPS.md` first** — LLM / JWT / Temporal vs agent execute / teardown leftovers.
+2. **Native Linux:** `127.0.0.1` is correct. **WSL2 only:** Windows browser must use the WSL eth0 IP, never Windows `127.0.0.1`.
+3. **LLM:** `host.containers.internal:1234`; LM Studio bind `0.0.0.0`; literal model id `qwen2.5-coder-7b-instruct` (Q4_K_M); thinking off; Gemini off unless keyed. On Kali/netavark, `make deploy` / `make redeploy POD=core` must patch `host.containers.internal` to the host LAN IP (`scripts/patch-host-gateway.sh`) — pasta's `169.254.1.2` times out.
+4. **Auth:** `aegis-runtime` / **`placeholder`**, issuer `http://127.0.0.1:8180`. Not `AEGIS_API_TOKEN`. Not `auth.localhost`. `aegis workflow run --follow` needs `workflow:logs`.
+5. **`aegis agent run` is not a Temporal workflow.** Temporal UI only shows `aegis workflow run`. Do not pin builtin version `1.0.0`.
 6. **Profiles** live in `profiles/*.conf` — trust the conf files.
-7. Low padding. Prefer action over re-scanning the whole tree.
+7. After any core restart, **`make overlays`**. Core re-registers stock v1.0.0 builtins.
+8. Low padding. Prefer action over re-scanning the whole tree.
 
 ## Deployment Workflows
 
@@ -137,7 +148,7 @@ make aegis CMD="agent list"
 make shell                      # bash into aegis-runtime container
 
 # Tear down
-make teardown                   # stops active profile's pods
+make teardown                   # stops active profile's pods + FUSE (not LM Studio, not aegis-agent-*)
 make clean                      # full teardown + prune volumes/networks
 
 # Health checks
@@ -149,14 +160,16 @@ make status
 
 `make deploy` runs `scripts/deploy.sh`, which:
 
-1. Sources `.env` and the active profile's `.conf`
+1. Sources `.env` and the active profile's `.conf`; detects `AEGIS_HOST_LAN_IP` (`scripts/lib/host-lan-ip.sh`)
 2. Ensures `aegis-network` exists
 3. Creates `/tmp/aegis-fuse-mounts/` for FUSE mount prefix (ADR-107)
 4. Extracts the `aegis` CLI binary from the container image via `install-aegis-cli.sh`
 5. Restarts the systemd FUSE daemon to pick up the new binary
-6. Iterates `$PODS` in order, running `envsubst < pod-*.yaml | podman play kube --network aegis-network --replace -`
+6. Iterates `$PODS` in order, running `envsubst < pod-*.yaml | podman play kube --network aegis-network --replace -` (`pod-core.yaml` `hostAliases` needs `AEGIS_HOST_LAN_IP`)
 7. After deploying `pod-secrets`, auto-runs `bootstrap-openbao.sh` and re-sources `.env`
-8. After all pods, applies `manifests/slow-slm/` overlays (`scripts/apply-slow-slm-overlays.sh`) so local SLM timeouts stay latest
+8. After all pods, if `core` was in the profile: `scripts/patch-host-gateway.sh` then `scripts/apply-slow-slm-overlays.sh` so local SLM timeouts stay latest
+
+`make teardown` stops profile pods and the FUSE unit. It does **not** stop LM Studio or remove leftover `aegis-agent-*` execution containers.
 
 ## FUSE Daemon (ADR-107)
 
@@ -189,6 +202,7 @@ Required variables in `.env` (copy from `.env.example`):
 | `GHCR_TOKEN` | Yes | GitHub PAT with `read:packages` scope |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
 | `ZARU_LLM_API_KEY` | No | Gemini key; unused while Gemini is disabled |
+| `AEGIS_HOST_LAN_IP` | No | Host IPv4 for `host.containers.internal` (auto-detected if empty) |
 | `AEGIS_IMAGE_TAG` | Yes | Image tag to deploy (default: `latest`) |
 | `TEMPORAL_UI_USER` | Recommended | Temporal UI basic auth username |
 | `TEMPORAL_UI_PASSWORD_HASH` | Recommended | bcrypt hash for Temporal UI (generate with `podman exec aegis-zaru-edge-caddy caddy hash-password --plaintext 'yourpassword'`) |
@@ -204,7 +218,7 @@ Required variables in `.env` (copy from `.env.example`):
 
 Pod definitions use **Kubernetes-style YAML** consumed by `podman play kube`. Key conventions:
 
-- Environment variables are injected via `envsubst` at deploy time — use `${VAR}` syntax in YAML, not Podman-specific env mechanisms
+- Environment variables are injected via `envsubst` at deploy time — use `${VAR}` syntax in YAML, not Podman-specific env mechanisms (`pod-core.yaml` `hostAliases` uses `${AEGIS_HOST_LAN_IP}`)
 - Persistent data uses `PersistentVolumeClaim` objects (Podman maps these to named volumes)
 - Config files are mounted via `hostPath` volumes pointing into the repo directory
 - All pods specify `hostNetwork: false` and join `aegis-network`
@@ -246,7 +260,7 @@ docs: update temporal basic auth comment with podman exec hash-password command
 config: increase smart alias max_output_tokens to 16384 for Gemini thinking mode
 ```
 
-Common scopes: `observability`, `core`, `temporal`, `secrets`, `storage`, `edge`, `iam`.
+Common scopes: `observability`, `core`, `temporal`, `secrets`, `storage`, `edge`, `iam`, `mcp`, `local`.
 
 ## Things to Know
 
@@ -263,3 +277,7 @@ Common scopes: `observability`, `core`, `temporal`, `secrets`, `storage`, `edge`
 - **Keycloak Admin UI** — `hostname-url=http://127.0.0.1:8180`; do not set `auth.localhost` + `--proxy=edge` without Caddy
 - **`hello-world` cannot execute** — input_schema `task` vs wrapped payload; use `aegis-python-executor-agent` or `builtin-intent-to-execution`
 - **`logs/` is gitignored** — deploy bring-up logs live there locally
+- **Overlays** — `make overlays` after every core restart; stock builtins are v1.0.0 and would otherwise become latest
+- **`workflow:logs`** — required for `aegis workflow run --follow`; re-run `make bootstrap-keycloak` after changing scopes
+- **`make teardown` leftovers** — LM Studio stays up; sweep `podman ps -a --filter name=aegis-agent-`
+- **Do not pin** `builtin-intent-to-execution` version `1.0.0` — overlay **1.0.4** is latest

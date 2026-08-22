@@ -3,6 +3,14 @@
 This document captures machine-local deployment facts that are easy to get wrong.
 Update it when behavior changes.
 
+This checkout is **native Linux** (Kali + rootless Podman). `http://127.0.0.1:PORT` is correct on the host. WSL2 notes below apply only if you run the stack inside WSL.
+
+Related:
+
+- Overlay timeouts: [manifests/slow-slm/README.md](../manifests/slow-slm/README.md)
+- 2026-08-21 field report (accessible PDF + unified diff): [AEGIS-Local-SLM-Field-Report-2026-08-21.pdf](AEGIS-Local-SLM-Field-Report-2026-08-21.pdf)
+- Host I/O / swappiness notes: [pc-tuning/summary.md](../pc-tuning/summary.md)
+
 ## Profiles (source of truth = `profiles/*.conf`)
 
 | Profile | Pods |
@@ -17,16 +25,15 @@ Update it when behavior changes.
 make redeploy POD=edge
 ```
 
-## WSL2 browser access (HARD RULE)
-
-Stack runs **inside WSL2**. Windows browser `http://127.0.0.1:PORT` is **Windows localhost**, not WSL → **connection refused**.
+## Browser access
 
 | Client | Correct base |
 |---|---|
-| curl / tools **inside WSL** | `http://127.0.0.1:PORT` |
-| **Windows browser** | `http://$(hostname -I | awk '{print $1}'):PORT` (currently often `172.27.70.12`) |
+| Native Linux (this checkout) | `http://127.0.0.1:PORT` |
+| Tools **inside WSL** | `http://127.0.0.1:PORT` |
+| **Windows browser → WSL2 stack** | WSL eth0 IP from `hostname -I` (Windows `127.0.0.1` is **not** WSL) |
 
-### Core UI ports (use WSL IP from Windows)
+### Core UI ports
 
 | UI | Port |
 |---|---|
@@ -47,16 +54,16 @@ Stack runs **inside WSL2**. Windows browser `http://127.0.0.1:PORT` is **Windows
 File: `podman/pods/core/aegis-config.yaml`
 
 - **Strategy:** `prefer-local`, `default_provider: lmstudio`
-- **LM Studio (host):** `http://127.0.0.1:1234` — server is already ON.
+- **LM Studio (host):** bind **`0.0.0.0:1234`** (`lms server start --bind 0.0.0.0`). Infra comes up with no model. `make teardown` does **not** stop LM Studio.
 - **From pods:** `http://host.containers.internal:1234/v1` (container `127.0.0.1` is not the host). LM Studio must bind `0.0.0.0` (`lms server start --bind 0.0.0.0`), not `127.0.0.1`.
 - **Kali + netavark:** Podman injects `host.containers.internal` → `169.254.1.2`, which **times out** from `aegis-network`. `scripts/patch-host-gateway.sh` rewrites it to the host LAN IPv4 (default-route `src`). `make deploy` / `make redeploy POD=core` run that patch. Verify: `podman exec aegis-core-aegis-runtime curl -sS http://host.containers.internal:1234/v1/models`.
 - **Model:** [`qwen2.5-coder-7b-instruct`](https://huggingface.co/lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF) (`Q4_K_M`). Confirm id:
   `curl -s http://127.0.0.1:1234/v1/models`
   If the `id` differs, update every `model:` field in `aegis-config.yaml`.
-- **Load (GTX 1660 Ti 6GB):** `lms load qwen2.5-coder-7b-instruct --gpu max -c 4096 --parallel 1 -y`. Thinking **off**. Unload Bonsai first (`lms unload --all`).
+- **Load (GTX 1660 Ti 6GB):** `lms unload --all` then `lms load qwen2.5-coder-7b-instruct --gpu max -c 4096 --parallel 1 -y`. Thinking **off**.
 - **Aliases on lmstudio:** `default`, `slm`, `smart`, `judge`, `slm-judge` — all point at Qwen Coder 7B. Built-ins request `default`. `max_output_tokens` is 2048 (1024 for judge), not 8192.
 - **Gemini:** `enabled: false` unless `ZARU_LLM_API_KEY` is set.
-- After edits: `podman restart aegis-core-aegis-runtime` (config is hostPath-mounted).
+- After config edits: `podman restart aegis-core-aegis-runtime` (config is hostPath-mounted), then **`make overlays`** — core start re-registers stock **v1.0.0** builtins.
 
 **Note:** Small SLMs often fail workflow-generator / creator agents with **context size exceeded**. Simple agent execute and YAML workflow register still work.
 
@@ -106,8 +113,11 @@ To see work in Temporal:
 AEGIS_KEY="$TOKEN" aegis --host 127.0.0.1 --port 8088 --output json \
   workflow run builtin-intent-to-execution \
   --intent 'Write a Python function fib(n) that returns the first n Fibonacci numbers.' \
-  --input '{"language":"python","language_ext":"py","runner":"python3","runner_flags":"-s","container_image":"python:3.11-slim","inputs":{"n":10},"inputs_json":"{\"n\":10}"}'
+  --input '{"language":"python","language_ext":"py","runner":"python3","runner_flags":"-s","container_image":"python:3.11-slim","inputs":{"n":10},"inputs_json":"{\"n\":10}"}' \
+  --follow
 ```
+
+`--follow` needs the `workflow:logs` client scope. Do **not** pin workflow version `1.0.0` — that is the stock builtin; latest is the slow-SLM overlay (**1.0.4**).
 
 Open <http://127.0.0.1:8233/namespaces/default/workflows> (not `temporal-system`).
 
@@ -238,6 +248,24 @@ A Temporal `Activity task failed` at `EXECUTE_CODE` with 3 iterations is usually
 
 Disable **Enable Thinking** in LM Studio if a single generate still stalls past 10 minutes.
 
+## Teardown
+
+```bash
+make teardown          # development-profile pods + FUSE daemon
+```
+
+Does **not**:
+
+- Stop LM Studio (`lms unload --all`; stop the server separately if you want GPU RAM back)
+- Remove leftover isolated execution containers (`aegis-agent-*`). `AEGIS_KEEP_CONTAINER=false` still left a `python:3.11-slim` `tail -f /dev/null` container after a long session.
+
+After teardown, `podman pod ps` should be empty. Sweep leftovers:
+
+```bash
+podman ps -a --filter name=aegis-agent-
+podman rm -f $(podman ps -aq --filter name=aegis-agent-)
+```
+
 ## Known non-blockers
 
 - Cortex missing → WARN "memoryless mode"
@@ -245,3 +273,5 @@ Disable **Enable Thinking** in LM Studio if a single generate still stalls past 
 - Early `make validate` can fail while Keycloak/Loki warm up — re-check once
 - Temporal UI on host `:8233` has **no** Caddy basic auth in this checkout (vars `TEMPORAL_UI_*` are unused unless edge is deployed)
 - `hello-world` agent cannot start (input_schema `task` vs wrapped execute payload)
+- Isolated `aegis-agent-*` containers can outlive `make teardown` — see Teardown
+- Grafana / Keycloak / OpenBao “down” in dashboards is often scrape config, not process death (table above)

@@ -40,3 +40,5 @@ aegis --host 127.0.0.1 --port 8088 workflow deploy --force --scope global \
 Overlay versions stay above stock **1.0.0** so a core restart that re-deploys builtins does not become latest: writers **1.0.2**, formatter **1.0.3**, workflow **1.0.4**. `aegis workflow run` / `aegis.execute.intent` use latest. `make deploy` and `make redeploy POD=core` apply these overlays after core is healthy; `make overlays` re-applies them on demand.
 
 Disable **Enable Thinking** in LM Studio if a single generate still stalls past 10 minutes.
+
+Do **not** pin `aegis workflow run ... --version 1.0.0`. Stock builtins are 1.0.0; the overlay versions above are what `latest` should resolve to after `make overlays`.

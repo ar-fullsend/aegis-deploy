@@ -112,26 +112,27 @@ The `pod-edge` directory contains a Caddy reverse proxy.
 make redeploy POD=edge
 ```
 
-## WSL2 / Windows browser access
+## Browser access
 
-If the stack runs in **WSL2**, Windows browser `http://127.0.0.1:PORT` hits **Windows**, not WSL → connection refused.
+This checkout is **native Linux**. `http://127.0.0.1:PORT` is correct on the host.
 
-- Inside WSL: `http://127.0.0.1:PORT` is correct.
-- From Windows browser: use the WSL eth0 IP (`hostname -I` inside WSL), e.g. `http://172.27.70.12:3300` for Grafana.
+If the stack runs in **WSL2**, a Windows browser `http://127.0.0.1:PORT` hits **Windows**, not WSL → connection refused. Use the WSL eth0 IP from `hostname -I` inside WSL.
 
-See [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md) for the full UI port list, LLM config, JWT auth, and workflow YAML schema.
+See [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md) for the full UI port list, LLM config, JWT auth, teardown leftovers, and workflow YAML schema.
 
 ## Local LLM (LM Studio)
 
 `podman/pods/core/aegis-config.yaml` is **prefer-local**:
 
-- Host server: `http://127.0.0.1:1234` — bind **`0.0.0.0`** (`lms server start --bind 0.0.0.0`). `127.0.0.1` is unreachable from pods.
+- Host server: bind **`0.0.0.0:1234`** (`lms server start --bind 0.0.0.0`). Infra comes up with no model. `make teardown` does **not** stop LM Studio.
 - From pods: `http://host.containers.internal:1234/v1`
+- **Kali + netavark:** pasta maps `host.containers.internal` to `169.254.1.2`, which times out from `aegis-network`. `make deploy` / `make redeploy POD=core` rewrite it to the host LAN IP (`scripts/patch-host-gateway.sh`, optional `AEGIS_HOST_LAN_IP`).
 - Model: `qwen2.5-coder-7b-instruct` (Qwen2.5-Coder-7B-Instruct Q4_K_M; confirm with `curl -s http://127.0.0.1:1234/v1/models`)
+- Load on a 6GB GPU: `lms load qwen2.5-coder-7b-instruct --gpu max -c 4096 --parallel 1 -y`. Thinking **off**.
 - Aliases `default`, `slm`, `smart`, `judge`, `slm-judge` all point at Qwen Coder 7B (`max_output_tokens` 2048, 1024 for judge; ctx 4096)
 - Gemini stays `enabled: false` unless `ZARU_LLM_API_KEY` is set
 
-After config changes: `podman restart aegis-core-aegis-runtime`.
+After config changes: `podman restart aegis-core-aegis-runtime`, then `make overlays` (core start re-registers stock v1.0.0 builtins).
 
 ## Makefile Targets
 
@@ -139,7 +140,7 @@ After config changes: `podman restart aegis-core-aegis-runtime`.
 |---|---|
 | `make setup` | Install Podman and dependencies (Ubuntu or Kali) |
 | `make deploy` | Deploy all pods for the active profile |
-| `make teardown` | Stop and remove all pods for the active profile |
+| `make teardown` | Stop and remove profile pods + FUSE (not LM Studio, not leftover `aegis-agent-*`) |
 | `make status` | Show running pod status |
 | `make validate` | Run health checks against deployed services |
 | `make registry-login` | Authenticate to ghcr.io using `.env` credentials |
@@ -187,15 +188,25 @@ AEGIS_KEY="$TOKEN" aegis --host 127.0.0.1 --port 8088 --output json \
   --intent 'Write a Python function fib(n) that returns the first n Fibonacci numbers.'
 
 # Durable workflow (DOES appear at http://127.0.0.1:8233/namespaces/default/workflows)
+# --follow needs workflow:logs. Do not pin version 1.0.0 (stock builtin).
 AEGIS_KEY="$TOKEN" aegis --host 127.0.0.1 --port 8088 --output json \
   workflow run builtin-intent-to-execution \
   --intent 'Write a Python function fib(n).' \
-  --input '{"language":"python","language_ext":"py","runner":"python3","runner_flags":"-s","container_image":"python:3.11-slim","inputs":{"n":10},"inputs_json":"{\"n\":10}"}'
+  --input '{"language":"python","language_ext":"py","runner":"python3","runner_flags":"-s","container_image":"python:3.11-slim","inputs":{"n":10},"inputs_json":"{\"n\":10}"}' \
+  --follow
 ```
 
 `hello-world` is deployed but cannot start (schema requires `task`; the execute path wraps input). Use `aegis-python-executor-agent` or a Temporal workflow. See [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md).
 
 ## Documentation
+
+| Doc | What |
+|---|---|
+| [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md) | Operator runbook (JWT, LM Studio, overlays, teardown) |
+| [manifests/slow-slm/README.md](manifests/slow-slm/README.md) | Slow-SLM overlay versions and timeout knobs |
+| [docs/AEGIS-Local-SLM-Field-Report-2026-08-21.pdf](docs/AEGIS-Local-SLM-Field-Report-2026-08-21.pdf) | 2026-08-21 field report (accessible PDF + unified diff) |
+| [pc-tuning/summary.md](pc-tuning/summary.md) | Host I/O scheduler and swappiness notes |
+| [AGENTS.md](AGENTS.md) | Context for AI assistants (`CLAUDE.md` is a symlink) |
 
 Full platform documentation: <https://docs.100monkeys.ai>
 
