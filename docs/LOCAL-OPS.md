@@ -49,10 +49,12 @@ File: `podman/pods/core/aegis-config.yaml`
 - **Strategy:** `prefer-local`, `default_provider: lmstudio`
 - **LM Studio (host):** `http://127.0.0.1:1234` — server is already ON.
 - **From pods:** `http://host.containers.internal:1234/v1` (container `127.0.0.1` is not the host). LM Studio must bind `0.0.0.0` (`lms server start --bind 0.0.0.0`), not `127.0.0.1`.
-- **Model:** [prism-ml/bonsai-27b](https://lmstudio.ai/models/prism-ml/bonsai-27b) (`Bonsai-27B-Q1_0` GGUF). Load it in LM Studio, then confirm the API id:
+- **Kali + netavark:** Podman injects `host.containers.internal` → `169.254.1.2`, which **times out** from `aegis-network`. `scripts/patch-host-gateway.sh` rewrites it to the host LAN IPv4 (default-route `src`). `make deploy` / `make redeploy POD=core` run that patch. Verify: `podman exec aegis-core-aegis-runtime curl -sS http://host.containers.internal:1234/v1/models`.
+- **Model:** [`qwen2.5-coder-7b-instruct`](https://huggingface.co/lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF) (`Q4_K_M`). Confirm id:
   `curl -s http://127.0.0.1:1234/v1/models`
-  If the `id` differs from `prism-ml/bonsai-27b`, update every `model:` field in `aegis-config.yaml`.
-- **Aliases on lmstudio:** `default`, `slm`, `smart`, `judge`, `slm-judge` — all point at Bonsai. Built-ins request `default`.
+  If the `id` differs, update every `model:` field in `aegis-config.yaml`.
+- **Load (GTX 1660 Ti 6GB):** `lms load qwen2.5-coder-7b-instruct --gpu max -c 4096 --parallel 1 -y`. Thinking **off**. Unload Bonsai first (`lms unload --all`).
+- **Aliases on lmstudio:** `default`, `slm`, `smart`, `judge`, `slm-judge` — all point at Qwen Coder 7B. Built-ins request `default`. `max_output_tokens` is 2048 (1024 for judge), not 8192.
 - **Gemini:** `enabled: false` unless `ZARU_LLM_API_KEY` is set.
 - After edits: `podman restart aegis-core-aegis-runtime` (config is hostPath-mounted).
 
@@ -73,7 +75,7 @@ TOKEN=$(curl -sS -X POST 'http://127.0.0.1:8180/realms/aegis-system/protocol/ope
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 ```
 
-Requires `make bootstrap-keycloak` once (idempotent). Re-run after changing scopes. The client needs `agent:list`, `agent:execute`, `agent:deploy`, `execution:read`, `workflow:run`, and related scopes assigned as default client scopes.
+Requires `make bootstrap-keycloak` once (idempotent). Re-run after changing scopes. The client needs `agent:list`, `agent:execute`, `agent:deploy`, `execution:read`, `workflow:run`, `workflow:logs` (required for `aegis workflow run --follow`), and related scopes assigned as default client scopes.
 
 ## Agent execute vs Temporal workflows
 
@@ -113,7 +115,7 @@ Confirm LLM path:
 
 ```bash
 podman logs --since 5m aegis-core-aegis-runtime 2>&1 | grep -E 'LLM inference|LLM HTTP'
-# expect: model=prism-ml/bonsai-27b endpoint=http://host.containers.internal:1234/v1/chat/completions
+# expect: model=qwen2.5-coder-7b-instruct endpoint=http://host.containers.internal:1234/v1/chat/completions
 ```
 
 ## Register a workflow record (YAML)
@@ -216,24 +218,25 @@ Local tools on the MCP server (not forwarded): `zaru.init`, `zaru.mode`. Everyth
 
 Docs: https://docs.100monkeys.ai/docs/zaru/mcp-client-setup
 
-## Execution timeouts (5 minutes)
+## Execution timeouts (slow SLM)
 
-Local SLM overlays in `manifests/slow-slm/` set **5 minutes** on every execution layer (right field for each):
+Local SLM overlays in `manifests/slow-slm/`: writers **v1.0.2**, formatter **v1.0.3**, workflow **v1.0.4**. A 5-minute **overall** agent budget is not enough for VALIDATE_CODE: that agent must `fs.read` then emit JSON, and a thinking 27B can spend the entire 300s on the first generate (`Execution timed out after 300 seconds` at `final_state: VALIDATE_CODE`).
 
-| Layer | Field | Value |
-|---|---|---|
-| LLM generate | `llm_timeout_seconds` / `llm_overall_timeout_secs` | `300` |
-| Agent iteration | `iteration_timeout` | `5m` |
-| Agent resource wall clock | `security.resources.timeout` | `5m` |
-| Workflow state (WRITE/VALIDATE/EXECUTE) | `states.*.timeout` | `5m` |
-| Isolated code run | `EXECUTE_CODE.resources.timeout` | `5m` |
-| Formatter Temporal activity | `output_handler.timeout_seconds` | `300` |
+| Layer | Field | Writer | Validator |
+|---|---|---|---|
+| LLM generate | `llm_timeout_seconds` | `300` | `600` |
+| Orchestrator LLM HTTP client | `llm_overall_timeout_secs` | `180` | `180` |
+| Agent iteration | `iteration_timeout` | `5m` | `10m` |
+| Agent run wall clock | `security.resources.timeout` | `15m` | `20m` |
+| Workflow state | `states.*.timeout` | WRITE/VALIDATE/EXECUTE `5m` | same |
+| Isolated code run | `EXECUTE_CODE.resources.timeout` | `5m` | n/a |
+| Formatter Temporal activity | `output_handler.timeout_seconds` | `15` (`required: false`) | n/a |
 
-Overlays are **v1.0.1** so stock **v1.0.0** builtins re-applied on core start stay underneath. Latest = 5 minute timeouts.
+`make deploy` and `make redeploy POD=core` apply overlays after core is healthy. `make overlays` is the standalone re-apply. Core start re-registers stock **v1.0.0** builtins; overlay versions stay latest.
 
-A Temporal `Activity task failed` at `EXECUTE_CODE` with 3 iterations is usually the **formatter activity**, not the Python container.
+A Temporal `Activity task failed` at `EXECUTE_CODE` with 3 iterations is usually the **formatter activity**, not the Python container. Overlay 1.0.4 makes the formatter optional so a slow format cannot fail a successful container run.
 
-Thinking 27B models may still exceed 5 minutes — disable **Enable Thinking** in LM Studio if needed.
+Disable **Enable Thinking** in LM Studio if a single generate still stalls past 10 minutes.
 
 ## Known non-blockers
 

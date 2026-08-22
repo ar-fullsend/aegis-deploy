@@ -1,0 +1,57 @@
+=== Timestamp ===
+Fri Aug 21 06:45:05 PM CDT 2026
+=== CPU governor ===
+performance
+performance
+performance
+performance
+performance
+performance
+=== CPU freq (cur MHz) ===
+cpu MHz		: 3900.009
+cpu MHz		: 3899.996
+cpu MHz		: 3899.975
+cpu MHz		: 3899.970
+cpu MHz		: 3899.946
+cpu MHz		: 3899.995
+=== Memory ===
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi        12Gi       503Mi       183Mi       3.4Gi       3.4Gi
+Swap:           12Gi       5.9Gi       6.4Gi
+=== Swap detail ===
+NAME           TYPE       SIZE USED PRIO
+/dev/nvme0n1p3 partition 12.3G 5.9G   -1
+=== vm.swappiness ===
+10
+=== IO schedulers ===
+sda: [none] mq-deadline 
+sdb: none [mq-deadline] 
+nvme0n1: [none] mq-deadline 
+=== GPU ===
+timestamp, utilization.gpu [%], utilization.memory [%], memory.used [MiB], memory.total [MiB], temperature.gpu, power.draw [W], clocks.current.sm [MHz], clocks.current.memory [MHz]
+2026/08/21 18:45:05.673, 47 %, 16 %, 5856 MiB, 6144 MiB, 66, 73.90 W, 1860 MHz, 5750 MHz
+=== Load avg ===
+2.80 3.02 2.98 4/2116 727273
+=== Disk I/O snapshot (iostat) ===
+Linux 7.0.12+kali-amd64 (localhost) 	08/21/2026 	_x86_64_	(6 CPU)
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+          12.28    4.56    4.65    0.04    0.00   78.46
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+nvme0n1         11.89    375.09     5.11  30.08    0.23    31.55   18.47   1075.40    41.17  69.03   13.40    58.22    0.00      0.00     0.00   0.00    0.00     0.00    1.95    0.33    0.25   0.29
+sda              0.00      0.05     0.00   0.00    0.21    15.28    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sdb              0.00      0.07     0.00   0.00    3.25    18.25    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+
+
+avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+           4.39   30.07    3.21    0.00    0.00   62.33
+
+Device            r/s     rkB/s   rrqm/s  %rrqm r_await rareq-sz     w/s     wkB/s   wrqm/s  %wrqm w_await wareq-sz     d/s     dkB/s   drqm/s  %drqm d_await dareq-sz     f/s f_await  aqu-sz  %util
+nvme0n1          0.00      0.00     0.00   0.00    0.00     0.00    4.00    140.00    29.00  87.88    0.25    35.00    0.00      0.00     0.00   0.00    0.00     0.00    2.00    0.50    0.00   0.00
+sda              0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+sdb              0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00      0.00     0.00   0.00    0.00     0.00    0.00    0.00    0.00   0.00
+
+
+=== Uptime ===
+ 18:45:06 up 15:10,  1 user,  load average: 2.80, 3.02, 2.98

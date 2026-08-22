@@ -16,8 +16,9 @@ spec:
   llm_providers:
     # Host LM Studio at 127.0.0.1:1234. From inside the pod that is
     # host.containers.internal (not 127.0.0.1 — that is the container loopback).
-    # Model: prism-ml/bonsai-27b (GGUF Bonsai-27B-Q1_0). Confirm id with
-    # curl http://127.0.0.1:1234/v1/models after it is loaded.
+    # Model: qwen2.5-coder-7b-instruct (Qwen2.5-Coder-7B-Instruct Q4_K_M).
+    # Confirm id: curl http://127.0.0.1:1234/v1/models after load.
+    # GTX 1660 Ti 6GB: GPU offload max, ctx 4096, parallel 1. Thinking off.
     - name: lmstudio
       type: openai
       endpoint: "http://host.containers.internal:1234/v1"
@@ -27,39 +28,39 @@ spec:
         # Built-ins often request alias "default" — must exist on local provider.
         # Use literal model id (env: expansion is unreliable for model field).
         - alias: "default"
-          model: "prism-ml/bonsai-27b"
+          model: "qwen2.5-coder-7b-instruct"
           capabilities: ["code", "reasoning"]
-          context_window: 32768
-          max_output_tokens: 8192
-          temperature: 0.7
+          context_window: 4096
+          max_output_tokens: 2048
+          temperature: 0.3
           cost_per_1k_tokens: 0.0
         - alias: "slm"
-          model: "prism-ml/bonsai-27b"
+          model: "qwen2.5-coder-7b-instruct"
           capabilities: ["code", "reasoning"]
-          context_window: 32768
-          max_output_tokens: 8192
-          temperature: 0.7
+          context_window: 4096
+          max_output_tokens: 2048
+          temperature: 0.3
           cost_per_1k_tokens: 0.0
         - alias: "smart"
-          model: "prism-ml/bonsai-27b"
+          model: "qwen2.5-coder-7b-instruct"
           capabilities: ["code", "reasoning"]
-          context_window: 32768
-          max_output_tokens: 8192
-          temperature: 0.7
+          context_window: 4096
+          max_output_tokens: 2048
+          temperature: 0.3
           cost_per_1k_tokens: 0.0
         - alias: "judge"
-          model: "prism-ml/bonsai-27b"
+          model: "qwen2.5-coder-7b-instruct"
           capabilities: ["reasoning"]
-          context_window: 32768
-          max_output_tokens: 4096
-          temperature: 0.2
+          context_window: 4096
+          max_output_tokens: 1024
+          temperature: 0.1
           cost_per_1k_tokens: 0.0
         - alias: "slm-judge"
-          model: "prism-ml/bonsai-27b"
+          model: "qwen2.5-coder-7b-instruct"
           capabilities: ["reasoning"]
-          context_window: 32768
-          max_output_tokens: 4096
-          temperature: 0.2
+          context_window: 4096
+          max_output_tokens: 1024
+          temperature: 0.1
           cost_per_1k_tokens: 0.0
 
     # Cloud Gemini — disabled; no API key required for infrastructure bring-up.
@@ -93,8 +94,9 @@ spec:
     default_provider: "lmstudio"
     max_retries: 2
     retry_delay_ms: 5000
-    # Wall clock for a single LLM generate (seconds).
-    llm_overall_timeout_secs: 300
+    # Wall clock for a single LLM generate (seconds). Qwen 7B Q4_K_M
+    # finishes well under this; raise if switching back to a thinking 27B.
+    llm_overall_timeout_secs: 180
 
   runtime:
     container_socket_path: "/run/podman/podman.sock"

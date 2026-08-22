@@ -2,7 +2,7 @@ apiVersion: 100monkeys.ai/v1
 kind: Agent
 metadata:
   name: aegis-python-executor-agent
-  version: 1.0.1
+  version: 1.0.2
   description: Writes idiomatic Python 3 code that fulfills a given intent, self-tests it via cmd.run against the actual INTENT_INPUTS plus a derived case, and saves it to a workspace file. Used by the intent-to-execution pipeline as the WRITE_CODE step.
   labels:
     role: worker
@@ -107,7 +107,7 @@ spec:
       cpu: 500
       memory: 256Mi
       disk: 1Gi
-      timeout: 5m
+      timeout: 15m
   tools:
   - fs.write
   - cmd.run

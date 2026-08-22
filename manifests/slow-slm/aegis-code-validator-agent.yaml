@@ -2,7 +2,7 @@ apiVersion: 100monkeys.ai/v1
 kind: Agent
 metadata:
   name: aegis-code-validator-agent
-  version: 1.0.1
+  version: 1.0.2
   description: Validates generated code is a reusable function that reads inputs from the INTENT_INPUTS environment variable rather than hardcoding literals. Returns structured JSON with a valid field used by workflow transition conditions to gate execution.
   labels:
     role: judge
@@ -14,13 +14,17 @@ spec:
     version: '3.11'
     image_pull_policy: IfNotPresent
     isolation: inherit
-    model: smart
+    model: judge
     temperature: 0.1
   task:
     instruction: |
       You are a code validation agent. Your job is to read the solution file
       from the workspace and verify it meets the structural requirements for
       the intent-to-execution pipeline.
+
+      SPEED: Do not narrate, plan, or restate the criteria. First message
+      MUST be an fs.read tool call. Second message MUST be the JSON object
+      only (no markdown fences, no prose).
 
       YOUR FIRST ACTION MUST be to call fs.read with the ABSOLUTE path
       shown in the "File:" field in the input below. The path will always
@@ -99,8 +103,8 @@ spec:
   execution:
     mode: iterative
     max_retries: 1
-    llm_timeout_seconds: 300
-    iteration_timeout: 5m
+    llm_timeout_seconds: 600
+    iteration_timeout: 10m
     validation:
     - type: json_schema
       schema:
@@ -137,7 +141,7 @@ spec:
       cpu: 500
       memory: 256Mi
       disk: 1Gi
-      timeout: 5m
+      timeout: 20m
   tools:
   - fs.read
   security_context: aegis-system-agent-runtime

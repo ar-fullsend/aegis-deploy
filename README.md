@@ -127,8 +127,8 @@ See [docs/LOCAL-OPS.md](docs/LOCAL-OPS.md) for the full UI port list, LLM config
 
 - Host server: `http://127.0.0.1:1234` — bind **`0.0.0.0`** (`lms server start --bind 0.0.0.0`). `127.0.0.1` is unreachable from pods.
 - From pods: `http://host.containers.internal:1234/v1`
-- Model: `prism-ml/bonsai-27b` (confirm with `curl -s http://127.0.0.1:1234/v1/models`)
-- Aliases `default`, `slm`, `smart`, `judge`, `slm-judge` all point at Bonsai (`max_output_tokens` 8192; thinking models spend tokens on `reasoning_content` first)
+- Model: `qwen2.5-coder-7b-instruct` (Qwen2.5-Coder-7B-Instruct Q4_K_M; confirm with `curl -s http://127.0.0.1:1234/v1/models`)
+- Aliases `default`, `slm`, `smart`, `judge`, `slm-judge` all point at Qwen Coder 7B (`max_output_tokens` 2048, 1024 for judge; ctx 4096)
 - Gemini stays `enabled: false` unless `ZARU_LLM_API_KEY` is set
 
 After config changes: `podman restart aegis-core-aegis-runtime`.
@@ -146,6 +146,7 @@ After config changes: `podman restart aegis-core-aegis-runtime`.
 | `make bootstrap-secrets` | Initialize OpenBao and populate AppRole credentials |
 | `make bootstrap-keycloak` | Configure Keycloak realm, clients, and roles |
 | `make generate-keys` | Generate SEAL RSA signing key pair |
+| `make overlays` | Re-apply `manifests/slow-slm/` agent/workflow versions (after core restart) |
 | `make redeploy POD=<name>` | Tear down and redeploy a single pod |
 | `make logs POD=<name>` | Tail logs for a specific pod |
 | `make clean` | Full teardown + prune volumes and networks |
@@ -161,6 +162,7 @@ Copy `.env.example` to `.env` and fill in the required values. Key variables:
 | `GHCR_TOKEN` | Yes | GitHub PAT with `read:packages` scope |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
 | `ZARU_LLM_API_KEY` | No | Gemini key; unused while Gemini is disabled |
+| `AEGIS_HOST_LAN_IP` | No | Host IPv4 for `host.containers.internal` (auto-detected if empty) |
 | `KEYCLOAK_ADMIN_PASSWORD` | Recommended | Keycloak admin password (default: `changeme`) |
 | `GRAFANA_ADMIN_PASSWORD` | Recommended | Grafana admin password (default: `changeme`) |
 | `CLOUDFLARE_API_TOKEN` | Edge only | Required for Caddy TLS via DNS challenge |

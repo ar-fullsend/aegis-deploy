@@ -8,6 +8,13 @@ metadata:
     app: aegis
     context: core
 spec:
+  # netavark does not route pasta's 169.254.1.2. deploy.sh patches /etc/hosts
+  # to the host LAN IP; this alias is a second source for the same mapping.
+  hostAliases:
+    - ip: "${AEGIS_HOST_LAN_IP}"
+      hostnames:
+        - host.containers.internal
+        - host.docker.internal
   containers:
     # --- AEGIS Runtime ---
     - name: aegis-runtime

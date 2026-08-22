@@ -1,18 +1,27 @@
-# Local SLM timeouts (5 minutes)
+# Local SLM timeouts
 
-All **execution** timeouts in this directory are **5 minutes**, using the field that matches each layer:
+Stock builtins use one 5-minute budget for the **entire** agent run. That is not enough for a thinking 27B: VALIDATE_CODE must `fs.read` then emit JSON (two LLM generates). A single generate can consume the whole 300s wall clock (`overall_timeout_secs=300`) and the workflow fails at VALIDATE with `Execution timed out after 300 seconds`.
 
-| Context | Field | Value |
-|---|---|---|
-| Single LLM HTTP generate | `spec.execution.llm_timeout_seconds` | `300` |
-| One agent iteration | `spec.execution.iteration_timeout` | `5m` |
-| Agent container / FSAL wall clock | `spec.security.resources.timeout` | `5m` |
-| Orchestrator-wide LLM generate | `llm_selection.llm_overall_timeout_secs` in `aegis-config.yaml` | `300` |
-| Workflow Agent/ContainerRun **state** | `spec.states.*.timeout` | `5m` |
-| Isolated code container | `EXECUTE_CODE.resources.timeout` | `5m` |
-| Temporal output-handler activity | `output_handler.timeout_seconds` | `300` |
+Overlays split the knobs:
+
+| Context | Field | Writer / formatter | Validator |
+|---|---|---|---|
+| Single LLM HTTP generate | `spec.execution.llm_timeout_seconds` | `300` | `600` |
+| One agent iteration | `spec.execution.iteration_timeout` | `5m` | `10m` |
+| Agent run wall clock (`overall_timeout_secs`) | `spec.security.resources.timeout` | `15m` | `20m` |
+| Orchestrator LLM HTTP client | `llm_selection.llm_overall_timeout_secs` in `aegis-config.yaml` | `180` | `180` |
+| Workflow Agent/ContainerRun **state** | `spec.states.*.timeout` | WRITE/VALIDATE/EXECUTE `5m` | same |
+| Isolated code container | `EXECUTE_CODE.resources.timeout` | `5m` | n/a |
+| Formatter agent wall clock | `aegis-output-formatter-agent` `resources.timeout` | `10m` | n/a |
+| Temporal output-handler activity | `output_handler.timeout_seconds` | `15` (`required: false`) | n/a |
 
 Not changed: OTLP exporter `5s`, health probes, Prometheus scrapes, TCP checks in `validate-stack.sh`.
+
+```bash
+make overlays
+```
+
+Equivalent:
 
 ```bash
 TOKEN=$(curl -sS -X POST 'http://127.0.0.1:8180/realms/aegis-system/protocol/openid-connect/token' \
@@ -28,6 +37,6 @@ aegis --host 127.0.0.1 --port 8088 workflow deploy --force --scope global \
   manifests/slow-slm/builtin-intent-to-execution.yaml
 ```
 
-Overlays use **version 1.0.1** so a core restart that re-deploys stock **1.0.0** builtins does not become latest. `aegis workflow run` / agent execute use latest.
+Overlay versions stay above stock **1.0.0** so a core restart that re-deploys builtins does not become latest: writers **1.0.2**, formatter **1.0.3**, workflow **1.0.4**. `aegis workflow run` / `aegis.execute.intent` use latest. `make deploy` and `make redeploy POD=core` apply these overlays after core is healthy; `make overlays` re-applies them on demand.
 
-A thinking 27B may still exceed 5 minutes; disable **Enable Thinking** in LM Studio if generate calls stall.
+Disable **Enable Thinking** in LM Studio if a single generate still stalls past 10 minutes.

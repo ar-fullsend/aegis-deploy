@@ -8,6 +8,14 @@ PODS_DIR="$ROOT_DIR/podman/pods"
 
 # shellcheck source=lib/systemd-user.sh
 source "$SCRIPT_DIR/lib/systemd-user.sh"
+# shellcheck source=lib/host-lan-ip.sh
+source "$SCRIPT_DIR/lib/host-lan-ip.sh"
+
+AEGIS_HOST_LAN_IP="${AEGIS_HOST_LAN_IP:-$(detect_host_lan_ip)}"
+export AEGIS_HOST_LAN_IP
+if [[ -n "${AEGIS_HOST_LAN_IP}" ]]; then
+    echo "Host LAN IP (host.containers.internal): $AEGIS_HOST_LAN_IP"
+fi
 
 # Load environment
 if [[ -f "$ROOT_DIR/.env" ]]; then
@@ -86,6 +94,18 @@ for pod in $PODS; do
         echo "  -> OpenBao bootstrapped and .env reloaded"
     fi
 done
+
+echo ""
+if [[ " $PODS " == *" core "* ]]; then
+    echo "  -> Patching host.containers.internal inside core..."
+    bash "$SCRIPT_DIR/patch-host-gateway.sh" || echo "WARNING: host gateway patch failed"
+    echo "  -> Applying slow-SLM overlays (local LM Studio timeouts)..."
+    if bash "$SCRIPT_DIR/apply-slow-slm-overlays.sh"; then
+        echo "  -> Slow-SLM overlays applied"
+    else
+        echo "WARNING: slow-SLM overlays were not applied. Run: make overlays"
+    fi
+fi
 
 echo ""
 echo "Deployment complete. Run 'make status' to verify."

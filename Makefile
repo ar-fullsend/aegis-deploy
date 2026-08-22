@@ -1,4 +1,4 @@
-.PHONY: setup deploy teardown status networks validate registry-login install-cli aegis shell bootstrap-secrets bootstrap-keycloak generate-keys redeploy logs clean
+.PHONY: setup deploy teardown status networks validate registry-login install-cli aegis shell bootstrap-secrets bootstrap-keycloak generate-keys redeploy logs clean overlays
 
 PROFILE ?= development
 SCRIPTS := ./scripts
@@ -61,6 +61,10 @@ bootstrap-keycloak:
 generate-keys:
 	@bash $(SCRIPTS)/generate-seal-keys.sh
 
+# ---- Slow-SLM overlays (re-apply after core restart) ----
+overlays:
+	@bash $(SCRIPTS)/apply-slow-slm-overlays.sh
+
 # ---- Redeploy single pod ----
 redeploy: registry-login
 	@if [ -z "$(POD)" ]; then echo "Usage: make redeploy POD=core"; exit 1; fi
@@ -68,7 +72,13 @@ redeploy: registry-login
 	@set -a && . ./.env && set +a && \
 	POD_FILE=$$(find $(PODS_DIR)/$(POD) -name "pod-*.yaml" -type f | head -1) && \
 	if [ -z "$$POD_FILE" ]; then echo "ERROR: No pod YAML found in $(PODS_DIR)/$(POD)"; exit 1; fi && \
+	AEGIS_HOST_LAN_IP=$${AEGIS_HOST_LAN_IP:-$$(bash $(SCRIPTS)/lib/host-lan-ip.sh)} && \
+	export AEGIS_HOST_LAN_IP && \
 	envsubst < "$$POD_FILE" | podman play kube --network aegis-network --replace - && \
+	if [ "$(POD)" = "core" ]; then \
+		bash $(SCRIPTS)/patch-host-gateway.sh && \
+		bash $(SCRIPTS)/apply-slow-slm-overlays.sh; \
+	fi && \
 	echo "==> Pod $(POD) redeployed"
 
 # ---- Helpers ----

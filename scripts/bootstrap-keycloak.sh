@@ -124,8 +124,9 @@ echo "Client aegis-runtime created or exists"
 # Create custom client scopes needed by runtime + temporal worker
 API_SCOPES=(
   "agent:list" "agent:read" "agent:execute" "agent:deploy" "agent:update"
-  "execution:read" "execution:stream"
+  "execution:read" "execution:stream" "execution:list"
   "workflow:read" "workflow:list" "workflow:run" "workflow:execute" "workflow:deploy"
+  "workflow:logs" "workflow:cancel" "workflow:status"
   "volume:read" "volume:write"
 )
 for SCOPE in "${API_SCOPES[@]}"; do

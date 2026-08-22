@@ -95,7 +95,7 @@ The observability pipeline: services export OTLP to **otelcol** at `aegis-observ
 
 1. **Read `docs/LOCAL-OPS.md` first** — WSL2 / LLM / JWT / Temporal vs agent execute.
 2. **WSL2:** Windows browser must use WSL eth0 IP, never `127.0.0.1`.
-3. **LLM:** `host.containers.internal:1234`; LM Studio bind `0.0.0.0`; literal model ids (`prism-ml/bonsai-27b`); Gemini off unless keyed.
+3. **LLM:** `host.containers.internal:1234`; LM Studio bind `0.0.0.0`; literal model id `qwen2.5-coder-7b-instruct` (Q4_K_M); Gemini off unless keyed. On Kali/netavark, `make deploy` / `make redeploy POD=core` must patch `host.containers.internal` to the host LAN IP (`scripts/patch-host-gateway.sh`) — pasta's `169.254.1.2` times out.
 4. **Auth:** `aegis-runtime` / **`placeholder`**, issuer `http://127.0.0.1:8180`. Not `AEGIS_API_TOKEN`. Not `auth.localhost`.
 5. **`aegis agent run` is not a Temporal workflow.** Temporal UI only shows `aegis workflow run`.
 6. **Profiles** live in `profiles/*.conf` — trust the conf files.
@@ -124,7 +124,8 @@ PROFILE=minimal make deploy
 PROFILE=full make deploy
 
 # Redeploy a single pod after config change
-make redeploy POD=core
+make redeploy POD=core          # also patches host.containers.internal and re-applies overlays
+make overlays                   # re-apply slow-SLM timeouts without a core restart
 make redeploy POD=observability
 
 # Tail logs
@@ -155,6 +156,7 @@ make status
 5. Restarts the systemd FUSE daemon to pick up the new binary
 6. Iterates `$PODS` in order, running `envsubst < pod-*.yaml | podman play kube --network aegis-network --replace -`
 7. After deploying `pod-secrets`, auto-runs `bootstrap-openbao.sh` and re-sources `.env`
+8. After all pods, applies `manifests/slow-slm/` overlays (`scripts/apply-slow-slm-overlays.sh`) so local SLM timeouts stay latest
 
 ## FUSE Daemon (ADR-107)
 
